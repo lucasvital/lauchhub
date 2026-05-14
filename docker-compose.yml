@@ -5,8 +5,8 @@
 #   - Volume persistence across redeploys
 #   - Environment variables (set as secrets in the Coolify UI)
 #
-# DO NOT add traefik.* labels here — Coolify provides its own reverse proxy.
-# DO NOT bind host ports for postgres/redis — they stay on the compose network.
+# 3rd-party credentials (Chatwoot, Mautic, Meta) are NOT here — they live in
+# the database (`*_instances` tables), managed via the `/instances` UI.
 
 services:
   launchhub:
@@ -23,16 +23,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       ADMIN_USER: ${ADMIN_USER:-lucas}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN}
-      CHATWOOT_URL: ${CHATWOOT_URL:-}
-      CHATWOOT_TOKEN: ${CHATWOOT_TOKEN:-}
-      CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-}
-      MAUTIC_URL: ${MAUTIC_URL:-}
-      MAUTIC_CLIENT_ID: ${MAUTIC_CLIENT_ID:-}
-      MAUTIC_CLIENT_SECRET: ${MAUTIC_CLIENT_SECRET:-}
-      META_TOKEN: ${META_TOKEN:-}
-      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
-      META_API_VERSION: ${META_API_VERSION:-v20.0}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
     expose:
       - '3000'
@@ -59,17 +50,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql://${POSTGRES_USER:-launchhub}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-launchhub}
       REDIS_URL: redis://redis:6379
-      CHATWOOT_URL: ${CHATWOOT_URL:-}
-      CHATWOOT_TOKEN: ${CHATWOOT_TOKEN:-}
-      CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-}
-      MAUTIC_URL: ${MAUTIC_URL:-}
-      MAUTIC_CLIENT_ID: ${MAUTIC_CLIENT_ID:-}
-      MAUTIC_CLIENT_SECRET: ${MAUTIC_CLIENT_SECRET:-}
-      META_TOKEN: ${META_TOKEN:-}
-      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
-      META_API_VERSION: ${META_API_VERSION:-v20.0}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
-      # Required by config.ts validation but unused by workers
+      # SESSION_SECRET unused by workers but required by config.ts validation
       SESSION_SECRET: ${SESSION_SECRET}
     depends_on:
       postgres:

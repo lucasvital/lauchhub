@@ -2,15 +2,9 @@ import 'dotenv/config';
 import { z } from 'zod';
 
 /**
- * Treat empty string as undefined.
- * Docker Compose passes unset `${VAR:-}` interpolations as `""`, which would
- * otherwise fail a `.url()` validation. This lets optional fields stay empty.
+ * Treat empty string env vars as undefined.
+ * Docker Compose expands unset `${VAR:-}` to literal `""`.
  */
-const optionalUrl = z.preprocess(
-  (v) => (v === '' ? undefined : v),
-  z.string().url().optional(),
-);
-
 const optionalString = z.preprocess(
   (v) => (v === '' ? undefined : v),
   z.string().optional(),
@@ -32,18 +26,12 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
 
-  CHATWOOT_URL: optionalUrl,
-  CHATWOOT_TOKEN: optionalString,
-  CHATWOOT_ACCOUNT_ID: optionalString,
+  // Chatwoot / Mautic / Meta credentials live in their respective `*_instances`
+  // tables now. Configured via `/instances` UI. Each campaign FKs into one.
 
-  MAUTIC_URL: optionalUrl,
-  MAUTIC_CLIENT_ID: optionalString,
-  MAUTIC_CLIENT_SECRET: optionalString,
-
-  META_TOKEN: optionalString,
-  META_PHONE_NUMBER_ID: optionalString,
-  META_API_VERSION: z.string().default('v20.0'),
-
+  // Sheets — stays as env because it's one global service account shared
+  // across all campaign spreadsheets. The user shares each Sheet with this
+  // account's email.
   GOOGLE_SERVICE_ACCOUNT_JSON: optionalString,
 });
 

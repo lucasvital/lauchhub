@@ -95,6 +95,7 @@ function MauticTab() {
 
   return (
     <InstancesList<MauticInstance>
+      kind="mautic"
       accent="purple"
       items={items}
       newForm={<NewMauticForm onCreated={() => qc.invalidateQueries({ queryKey: ['instances', 'mautic'] })} />}
@@ -168,6 +169,7 @@ function ChatwootTab() {
 
   return (
     <InstancesList<ChatwootInstance>
+      kind="chatwoot"
       accent="cyan"
       items={items}
       newForm={
@@ -243,6 +245,7 @@ function MetaTab() {
 
   return (
     <InstancesList<MetaInstance>
+      kind="meta"
       accent="amber"
       items={items}
       newForm={<NewMetaForm onCreated={() => qc.invalidateQueries({ queryKey: ['instances', 'meta'] })} />}
@@ -336,6 +339,7 @@ function FormField({
 }
 
 function InstancesList<T extends AnyInstance>({
+  kind,
   items,
   newForm,
   renderRow,
@@ -343,6 +347,7 @@ function InstancesList<T extends AnyInstance>({
   accent,
   loading,
 }: {
+  kind: InstanceKind;
   items: T[];
   newForm: ReactNode;
   renderRow: (item: T) => ReactNode;
@@ -363,22 +368,14 @@ function InstancesList<T extends AnyInstance>({
           </Card>
         ) : (
           items.map((it) => (
-            <Card key={it.id} accent={accent} tight>
-              <div className="flex items-start justify-between gap-3">
-                {renderRow(it)}
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={() => {
-                    if (confirm('Excluir esta instância? Campanhas que apontavam pra ela cairão pro fallback global.')) {
-                      onDelete(it.id);
-                    }
-                  }}
-                >
-                  Excluir
-                </Button>
-              </div>
-            </Card>
+            <InstanceCard
+              key={it.id}
+              kind={kind}
+              accent={accent}
+              instance={it}
+              renderRow={renderRow}
+              onDelete={onDelete}
+            />
           ))
         )}
       </div>
@@ -387,5 +384,66 @@ function InstancesList<T extends AnyInstance>({
         {newForm}
       </Card>
     </div>
+  );
+}
+
+function InstanceCard<T extends AnyInstance>({
+  kind,
+  accent,
+  instance,
+  renderRow,
+  onDelete,
+}: {
+  kind: InstanceKind;
+  accent: 'purple' | 'cyan' | 'amber';
+  instance: T;
+  renderRow: (item: T) => ReactNode;
+  onDelete: (id: string) => void;
+}) {
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  async function onTest() {
+    setTesting(true);
+    setTestResult('testando...');
+    try {
+      const r = await api.post<{ ok: boolean; latency_ms?: number; error?: string | null }>(
+        `/api/instances/${kind}/${instance.id}/test`,
+      );
+      setTestResult(r.ok ? `✓ OK · ${r.latency_ms ?? 0}ms` : `✕ ${r.error ?? 'falhou'}`);
+    } catch {
+      setTestResult('✕ erro de rede');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <Card accent={accent} tight>
+      <div className="flex items-start justify-between gap-3">
+        {renderRow(instance)}
+        <div className="flex flex-col items-end gap-2">
+          <Button size="sm" variant="ghost" onClick={onTest} disabled={testing}>
+            testar
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => {
+              if (
+                confirm(
+                  'Excluir esta instância? Campanhas que apontavam pra ela ficarão sem credenciais.',
+                )
+              ) {
+                onDelete(instance.id);
+              }
+            }}
+          >
+            Excluir
+          </Button>
+        </div>
+      </div>
+      {testResult && <div className="mt-2 text-[11px] text-muted">{testResult}</div>}
+    </Card>
   );
 }

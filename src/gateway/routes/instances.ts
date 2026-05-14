@@ -1,6 +1,72 @@
 import type { FastifyInstance } from 'fastify';
 import * as instances from '../../db/instances.js';
 
+interface PingResult {
+  ok: boolean;
+  latency_ms: number;
+  error?: string;
+}
+
+async function pingChatwoot(inst: instances.ChatwootInstanceRow): Promise<PingResult> {
+  const start = Date.now();
+  try {
+    const res = await fetch(`${inst.url.replace(/\/$/, '')}/api/v1/accounts/${inst.account_id}`, {
+      headers: { api_access_token: inst.token },
+      signal: AbortSignal.timeout(5000),
+    });
+    return {
+      ok: res.ok,
+      latency_ms: Date.now() - start,
+      error: res.ok ? undefined : `http_${res.status}`,
+    };
+  } catch (err) {
+    return { ok: false, latency_ms: Date.now() - start, error: String(err) };
+  }
+}
+
+async function pingMautic(inst: instances.MauticInstanceRow): Promise<PingResult> {
+  const start = Date.now();
+  try {
+    const res = await fetch(`${inst.url.replace(/\/$/, '')}/oauth/v2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: inst.client_id,
+        client_secret: inst.client_secret,
+      }).toString(),
+      signal: AbortSignal.timeout(5000),
+    });
+    return {
+      ok: res.ok,
+      latency_ms: Date.now() - start,
+      error: res.ok ? undefined : `http_${res.status}`,
+    };
+  } catch (err) {
+    return { ok: false, latency_ms: Date.now() - start, error: String(err) };
+  }
+}
+
+async function pingMeta(inst: instances.MetaInstanceRow): Promise<PingResult> {
+  const start = Date.now();
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/${inst.api_version}/${inst.phone_number_id}`,
+      {
+        headers: { Authorization: `Bearer ${inst.token}` },
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+    return {
+      ok: res.ok,
+      latency_ms: Date.now() - start,
+      error: res.ok ? undefined : `http_${res.status}`,
+    };
+  } catch (err) {
+    return { ok: false, latency_ms: Date.now() - start, error: String(err) };
+  }
+}
+
 /**
  * CRUD for Mautic / Chatwoot / Meta instances.
  * Each instance represents a 3rd-party account that one or more campaigns
@@ -47,6 +113,16 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
     },
   );
 
+  app.post<{ Params: { id: string } }>(
+    '/api/instances/mautic/:id/test',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const inst = await instances.mautic.findById(req.params.id);
+      if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
+      return pingMautic(inst);
+    },
+  );
+
   // ─── Chatwoot ──────────────────────────────────────────────────────────────
 
   app.get('/api/instances/chatwoot', { preHandler: app.requireAuth }, async () => {
@@ -87,6 +163,16 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
     },
   );
 
+  app.post<{ Params: { id: string } }>(
+    '/api/instances/chatwoot/:id/test',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const inst = await instances.chatwoot.findById(req.params.id);
+      if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
+      return pingChatwoot(inst);
+    },
+  );
+
   // ─── Meta ──────────────────────────────────────────────────────────────────
 
   app.get('/api/instances/meta', { preHandler: app.requireAuth }, async () => {
@@ -124,6 +210,16 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
       const ok = await instances.meta.remove(req.params.id);
       if (!ok) return reply.code(404).send({ ok: false, error: 'not_found' });
       return { ok: true };
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/instances/meta/:id/test',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const inst = await instances.meta.findById(req.params.id);
+      if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
+      return pingMeta(inst);
     },
   );
 }
