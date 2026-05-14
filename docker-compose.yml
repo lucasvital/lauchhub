@@ -1,0 +1,108 @@
+# LaunchHub production stack (Coolify-friendly)
+#
+# Coolify builds this compose via its Docker Compose build pack. It handles:
+#   - Domain routing + SSL (Let's Encrypt) — configured in the Coolify UI
+#   - Volume persistence across redeploys
+#   - Environment variables (set as secrets in the Coolify UI)
+#
+# DO NOT add traefik.* labels here — Coolify provides its own reverse proxy.
+# DO NOT bind host ports for postgres/redis — they stay on the compose network.
+
+services:
+  launchhub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-launchhub}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-launchhub}
+      REDIS_URL: redis://redis:6379
+      SESSION_SECRET: ${SESSION_SECRET}
+      ADMIN_USER: ${ADMIN_USER:-lucas}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN}
+      CHATWOOT_URL: ${CHATWOOT_URL:-}
+      CHATWOOT_TOKEN: ${CHATWOOT_TOKEN:-}
+      CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-}
+      MAUTIC_URL: ${MAUTIC_URL:-}
+      MAUTIC_CLIENT_ID: ${MAUTIC_CLIENT_ID:-}
+      MAUTIC_CLIENT_SECRET: ${MAUTIC_CLIENT_SECRET:-}
+      META_TOKEN: ${META_TOKEN:-}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
+      META_API_VERSION: ${META_API_VERSION:-v20.0}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+    expose:
+      - '3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:3000/health']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  launchhub-workers:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ['node', 'dist/workers/index.js']
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-launchhub}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-launchhub}
+      REDIS_URL: redis://redis:6379
+      CHATWOOT_URL: ${CHATWOOT_URL:-}
+      CHATWOOT_TOKEN: ${CHATWOOT_TOKEN:-}
+      CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-}
+      MAUTIC_URL: ${MAUTIC_URL:-}
+      MAUTIC_CLIENT_ID: ${MAUTIC_CLIENT_ID:-}
+      MAUTIC_CLIENT_SECRET: ${MAUTIC_CLIENT_SECRET:-}
+      META_TOKEN: ${META_TOKEN:-}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
+      META_API_VERSION: ${META_API_VERSION:-v20.0}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      # Required by config.ts validation but unused by workers
+      SESSION_SECRET: ${SESSION_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-launchhub}
+      POSTGRES_USER: ${POSTGRES_USER:-launchhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-launchhub}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,38 @@
+node_modules
+dist
+.git
+.gitignore
+.github
+*.log
+.env
+.env.local
+.env.*.local
+
+# AIOX framework metadata — not part of the runtime image
+.aiox-core
+.aiox
+.claude
+.codex
+.cursor
+.gemini
+.antigravity
+.kimi
+AGENTS.md
+CLAUDE.md
+
+# Tests + docs not needed in runtime
+tests
+docs
+
+# Prototype HTML/CSS/JS — frontend goes to Vercel separately
+src/ui
+
+# Painel frontend — built and deployed by Vercel, not the backend image
+src/painel
+
+# IDE & OS
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+*.swp

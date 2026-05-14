@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "isolatedModules": false,
+    "verbatimModuleSyntax": false,
+    "noEmit": true
+  },
+  "include": ["src/db/migrations/**/*.ts"]
+}

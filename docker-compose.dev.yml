@@ -1,0 +1,40 @@
+# Local dev infra only: Postgres + Redis.
+# The app runs on the host via `npm run dev`.
+# For full production stack, see Story 6.1 (docker-compose.yml + Traefik).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: launchhub-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: launchhub
+      POSTGRES_USER: launchhub
+      POSTGRES_PASSWORD: launchhub
+    ports:
+      - '5432:5432'
+    volumes:
+      - launchhub_postgres_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U launchhub']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: launchhub-redis-dev
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - launchhub_redis_dev:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  launchhub_postgres_dev:
+  launchhub_redis_dev:
