@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { createBullBoard } from '@bull-board/api';
-import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+// v5 doesn't expose subpath via `exports` field — use deep import.
+import { BullMQAdapter } from '@bull-board/api/dist/src/queueAdapters/bullMQ.js';
 import { FastifyAdapter } from '@bull-board/fastify';
 import { queues } from '../queue/index.js';
 import type { WorkerId } from '../types/job.js';
@@ -14,13 +15,13 @@ export async function registerBullBoard(app: FastifyInstance): Promise<void> {
   serverAdapter.setBasePath('/queue');
 
   const workerIds: WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta'];
-  createBullBoard({
-    queues: workerIds.map((id) => new BullMQAdapter(queues[id])),
-    serverAdapter,
-  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const adapters = workerIds.map((id) => new BullMQAdapter(queues[id] as any) as any);
+  createBullBoard({ queues: adapters, serverAdapter });
 
   await app.register(serverAdapter.registerPlugin(), {
     prefix: '/queue',
+    basePath: '/queue',
   });
 
   // Protect the dashboard by checking auth on every /queue request
