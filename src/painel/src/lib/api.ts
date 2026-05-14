@@ -72,7 +72,11 @@ export interface Campaign {
   campaign_token: string;
   product_id: string | null;
   product_name: string | null;
+  expert_name: string | null;
   sheets_id: string | null;
+  chatwoot_instance_id: string | null;
+  mautic_instance_id: string | null;
+  meta_instance_id: string | null;
   chatwoot_inbox_id: number | null;
   chatwoot_tags: Record<string, string[]>;
   mautic_segment_id: number | null;
@@ -82,6 +86,11 @@ export interface Campaign {
   active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface InstanceSummary {
+  id: string;
+  name: string;
 }
 
 export interface DashboardSummary {

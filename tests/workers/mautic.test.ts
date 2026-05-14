@@ -22,7 +22,7 @@ const job: WebhookJob = {
     product_id: null,
     product_name: null,
   },
-  config: { mautic_segment_id: 38, mautic_tags: ['comprador'] },
+  config: { mautic_url: 'https://mautic.test', mautic_client_id: 'cid', mautic_client_secret: 'secret', mautic_segment_id: 38, mautic_tags: ['comprador'] },
   received_at: '2026-05-14T18:00:00Z',
 };
 
@@ -34,7 +34,7 @@ describe('processMauticJob', () => {
       patchContact: vi.fn(),
       addToSegment: vi.fn().mockResolvedValue(undefined),
     };
-    await processMauticJob(job, cfg, adapter);
+    await processMauticJob(job, adapter);
     expect(adapter.findContactByEmail).toHaveBeenCalledWith(cfg, 'j@x.com');
     expect(adapter.createContact).toHaveBeenCalledWith(cfg, {
       email: 'j@x.com',
@@ -54,7 +54,7 @@ describe('processMauticJob', () => {
       patchContact: vi.fn().mockResolvedValue(undefined),
       addToSegment: vi.fn().mockResolvedValue(undefined),
     };
-    await processMauticJob(job, cfg, adapter);
+    await processMauticJob(job, adapter);
     expect(adapter.createContact).not.toHaveBeenCalled();
     expect(adapter.patchContact).toHaveBeenCalledWith(cfg, 7, { tags: ['comprador'] });
     expect(adapter.addToSegment).toHaveBeenCalledWith(cfg, 38, 7);
@@ -68,7 +68,7 @@ describe('processMauticJob', () => {
       addToSegment: vi.fn(),
     };
     const noSeg = { ...job, config: { ...job.config, mautic_segment_id: null } };
-    await processMauticJob(noSeg, cfg, adapter);
+    await processMauticJob(noSeg, adapter);
     expect(adapter.addToSegment).not.toHaveBeenCalled();
   });
 
@@ -80,7 +80,7 @@ describe('processMauticJob', () => {
       addToSegment: vi.fn(),
     };
     const ghost = { ...job, contact: { ...job.contact, email: null } };
-    await expect(processMauticJob(ghost, cfg, adapter)).rejects.toBeInstanceOf(FatalError);
+    await expect(processMauticJob(ghost, adapter)).rejects.toBeInstanceOf(FatalError);
   });
 });
 

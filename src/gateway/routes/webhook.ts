@@ -57,7 +57,7 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
           return reply.code(200).send({ ok: true, processed: false, reason: 'unrecognized_event' });
         }
 
-        const jobs = buildJobs(payload, campaign, eventId);
+        const jobs = await buildJobs(payload, campaign, eventId);
 
         if (jobs.length === 0) {
           log.info({ event: 'no_workers_enabled', event_id: eventId });

@@ -1,5 +1,4 @@
 import { Worker, type Job } from 'bullmq';
-import { config } from '../config.js';
 import { FatalError } from '../integrations/_shared/errors.js';
 import { normalizePhone } from '../integrations/_shared/phone.js';
 import {
@@ -18,22 +17,22 @@ export interface ChatwootAdapter {
 
 const defaultAdapter: ChatwootAdapter = { searchByPhone, createContact, mergeLabels };
 
-function readGlobalConfig(): ChatwootConfig {
-  if (!config.CHATWOOT_URL || !config.CHATWOOT_TOKEN || !config.CHATWOOT_ACCOUNT_ID) {
-    throw new FatalError('Chatwoot is not fully configured', 'no_credentials');
+function resolveConfig(job: WebhookJob): ChatwootConfig {
+  const { chatwoot_url, chatwoot_token, chatwoot_account_id } = job.config;
+  if (!chatwoot_url || !chatwoot_token || !chatwoot_account_id) {
+    throw new FatalError(
+      'Chatwoot instance not configured for this campaign (and no global fallback)',
+      'no_credentials',
+    );
   }
-  return {
-    baseUrl: config.CHATWOOT_URL,
-    accountId: config.CHATWOOT_ACCOUNT_ID,
-    token: config.CHATWOOT_TOKEN,
-  };
+  return { baseUrl: chatwoot_url, accountId: chatwoot_account_id, token: chatwoot_token };
 }
 
 export async function processChatwootJob(
   job: WebhookJob,
-  cfg: ChatwootConfig = readGlobalConfig(),
   adapter: ChatwootAdapter = defaultAdapter,
 ): Promise<void> {
+  const cfg = resolveConfig(job);
   const phone = normalizePhone(job.contact.phone);
   const tags = job.config.chatwoot_tags ?? [];
 
@@ -41,7 +40,6 @@ export async function processChatwootJob(
     throw new FatalError('No phone or email to identify Chatwoot contact', 'no_identifier');
   }
 
-  // Search by phone preferred (matches CLAUDE.md); fallback if absent
   let contact = phone ? await adapter.searchByPhone(cfg, phone) : null;
 
   if (!contact) {
@@ -59,14 +57,12 @@ export async function processChatwootJob(
 }
 
 export async function startChatwootWorker(
-  cfg?: ChatwootConfig,
   adapter: ChatwootAdapter = defaultAdapter,
 ): Promise<Worker<WebhookJob>> {
   const { connection, QUEUE_NAMES } = await import('../queue/index.js');
   return new Worker<WebhookJob>(
     QUEUE_NAMES.chatwoot,
-    async (bullJob: Job<WebhookJob>) =>
-      processChatwootJob(bullJob.data, cfg ?? readGlobalConfig(), adapter),
+    async (bullJob: Job<WebhookJob>) => processChatwootJob(bullJob.data, adapter),
     { connection, concurrency: 5 },
   );
 }

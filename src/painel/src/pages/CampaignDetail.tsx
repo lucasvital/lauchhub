@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, type Campaign, EVENTS, WORKERS, type EventId, type WorkerId } from '../lib/api';
+import {
+  api,
+  type Campaign,
+  type InstanceSummary,
+  EVENTS,
+  WORKERS,
+  type EventId,
+  type WorkerId,
+} from '../lib/api';
 import { Card, Badge, Button, Callout, WorkerChip } from '../components/ui';
 
 export function CampaignDetailPage() {
@@ -26,6 +34,28 @@ export function CampaignDetailPage() {
         workers: vars.workers,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns', id] }),
+  });
+
+  const patchCampaign = useMutation({
+    mutationFn: (patch: Partial<Campaign>) =>
+      api.patch<{ ok: true; campaign: Campaign }>(`/api/campaigns/${id}`, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns', id] }),
+  });
+
+  const mauticInstances = useQuery({
+    queryKey: ['instances', 'mautic'],
+    queryFn: () => api.get<{ ok: true; items: InstanceSummary[] }>('/api/instances/mautic'),
+    select: (r) => r.items,
+  });
+  const chatwootInstances = useQuery({
+    queryKey: ['instances', 'chatwoot'],
+    queryFn: () => api.get<{ ok: true; items: InstanceSummary[] }>('/api/instances/chatwoot'),
+    select: (r) => r.items,
+  });
+  const metaInstances = useQuery({
+    queryKey: ['instances', 'meta'],
+    queryFn: () => api.get<{ ok: true; items: InstanceSummary[] }>('/api/instances/meta'),
+    select: (r) => r.items,
   });
 
   if (q.isLoading) return <div className="py-16 text-center text-xs text-muted">carregando...</div>;
@@ -107,6 +137,91 @@ export function CampaignDetailPage() {
             {copied ? '✓ copiado' : 'copiar'}
           </button>
         </div>
+      </Card>
+
+      <Card className="mb-6">
+        <h3 className="mb-4">// Integrações desta campanha</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              Expert / produto
+            </span>
+            <input
+              defaultValue={c.expert_name ?? ''}
+              onBlur={(e) => {
+                if (e.target.value !== (c.expert_name ?? ''))
+                  patchCampaign.mutate({ expert_name: e.target.value || null });
+              }}
+              placeholder="ex: João Silva"
+            />
+          </label>
+          <InstanceSelect
+            label="Mautic instance"
+            value={c.mautic_instance_id}
+            options={mauticInstances.data ?? []}
+            onChange={(v) => patchCampaign.mutate({ mautic_instance_id: v })}
+          />
+          <InstanceSelect
+            label="Chatwoot instance"
+            value={c.chatwoot_instance_id}
+            options={chatwootInstances.data ?? []}
+            onChange={(v) => patchCampaign.mutate({ chatwoot_instance_id: v })}
+          />
+          <InstanceSelect
+            label="Meta (WhatsApp) instance"
+            value={c.meta_instance_id}
+            options={metaInstances.data ?? []}
+            onChange={(v) => patchCampaign.mutate({ meta_instance_id: v })}
+          />
+          <label className="block">
+            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              Chatwoot inbox ID
+            </span>
+            <input
+              type="number"
+              defaultValue={c.chatwoot_inbox_id ?? ''}
+              onBlur={(e) => {
+                const v = e.target.value ? Number(e.target.value) : null;
+                if (v !== c.chatwoot_inbox_id)
+                  patchCampaign.mutate({ chatwoot_inbox_id: v });
+              }}
+              placeholder="14"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              Mautic segment ID
+            </span>
+            <input
+              type="number"
+              defaultValue={c.mautic_segment_id ?? ''}
+              onBlur={(e) => {
+                const v = e.target.value ? Number(e.target.value) : null;
+                if (v !== c.mautic_segment_id)
+                  patchCampaign.mutate({ mautic_segment_id: v });
+              }}
+              placeholder="38"
+            />
+          </label>
+          <label className="block sm:col-span-2">
+            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              Google Sheets — Spreadsheet ID
+            </span>
+            <input
+              defaultValue={c.sheets_id ?? ''}
+              onBlur={(e) => {
+                const v = e.target.value || null;
+                if (v !== c.sheets_id) patchCampaign.mutate({ sheets_id: v });
+              }}
+              placeholder="1a2B3cD4..."
+            />
+          </label>
+        </div>
+        <Callout kind="tip">
+          Quando o dropdown está em "— fallback global —", as credenciais vêm do <code>.env</code> do
+          servidor. Cadastre instâncias em <Link to="/instances" className="underline">Integrações</Link>{' '}
+          pra dar credencial diferente por campanha.
+        </Callout>
       </Card>
 
       <Callout kind="tip">
@@ -239,5 +354,36 @@ export function CampaignDetailPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function InstanceSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  options: InstanceSummary[];
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+        {label}
+      </span>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">— fallback global —</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

@@ -7,7 +7,13 @@ export interface CampaignRow {
   campaign_token: string;
   product_id: string | null;
   product_name: string | null;
+  expert_name: string | null;
   sheets_id: string | null;
+  // FK references — when null, falls back to global_config
+  chatwoot_instance_id: string | null;
+  mautic_instance_id: string | null;
+  meta_instance_id: string | null;
+  // Per-campaign config (inbox, tags, segment, templates)
   chatwoot_inbox_id: number | null;
   chatwoot_tags: Record<string, string[]>;
   mautic_segment_id: number | null;
@@ -24,7 +30,11 @@ export interface CampaignCreateInput {
   campaign_token: string;
   product_id?: string | null;
   product_name?: string | null;
+  expert_name?: string | null;
   sheets_id?: string | null;
+  chatwoot_instance_id?: string | null;
+  mautic_instance_id?: string | null;
+  meta_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
   chatwoot_tags?: Record<string, string[]>;
   mautic_segment_id?: number | null;
@@ -38,7 +48,11 @@ export interface CampaignUpdateInput {
   name?: string;
   product_id?: string | null;
   product_name?: string | null;
+  expert_name?: string | null;
   sheets_id?: string | null;
+  chatwoot_instance_id?: string | null;
+  mautic_instance_id?: string | null;
+  meta_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
   chatwoot_tags?: Record<string, string[]>;
   mautic_segment_id?: number | null;
@@ -48,9 +62,11 @@ export interface CampaignUpdateInput {
 }
 
 const ALL_COLS = `
-  id, name, campaign_token, product_id, product_name,
-  sheets_id, chatwoot_inbox_id, chatwoot_tags,
-  mautic_segment_id, mautic_tags, meta_templates,
+  id, name, campaign_token, product_id, product_name, expert_name,
+  sheets_id,
+  chatwoot_instance_id, chatwoot_inbox_id, chatwoot_tags,
+  mautic_instance_id, mautic_segment_id, mautic_tags,
+  meta_instance_id, meta_templates,
   enabled_workers, active, created_at, updated_at
 `;
 
@@ -86,7 +102,7 @@ export async function list(opts: ListOptions = {}): Promise<CampaignRow[]> {
   if (opts.query) {
     params.push(`%${opts.query.toLowerCase()}%`);
     where.push(
-      `(LOWER(name) LIKE $${params.length} OR LOWER(campaign_token) LIKE $${params.length} OR LOWER(COALESCE(product_name,'')) LIKE $${params.length})`,
+      `(LOWER(name) LIKE $${params.length} OR LOWER(campaign_token) LIKE $${params.length} OR LOWER(COALESCE(product_name,'')) LIKE $${params.length} OR LOWER(COALESCE(expert_name,'')) LIKE $${params.length})`,
     );
   }
 
@@ -105,20 +121,33 @@ export async function list(opts: ListOptions = {}): Promise<CampaignRow[]> {
 export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
   const r = await query<CampaignRow>(
     `INSERT INTO campaigns
-       (name, campaign_token, product_id, product_name, sheets_id, chatwoot_inbox_id,
-        chatwoot_tags, mautic_segment_id, mautic_tags, meta_templates, enabled_workers, active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12)
+       (name, campaign_token, product_id, product_name, expert_name,
+        sheets_id,
+        chatwoot_instance_id, chatwoot_inbox_id, chatwoot_tags,
+        mautic_instance_id, mautic_segment_id, mautic_tags,
+        meta_instance_id, meta_templates,
+        enabled_workers, active)
+     VALUES ($1,$2,$3,$4,$5,
+             $6,
+             $7,$8,$9::jsonb,
+             $10,$11,$12::jsonb,
+             $13,$14::jsonb,
+             $15::jsonb,$16)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
       input.campaign_token,
       input.product_id ?? null,
       input.product_name ?? null,
+      input.expert_name ?? null,
       input.sheets_id ?? null,
+      input.chatwoot_instance_id ?? null,
       input.chatwoot_inbox_id ?? null,
       JSON.stringify(input.chatwoot_tags ?? {}),
+      input.mautic_instance_id ?? null,
       input.mautic_segment_id ?? null,
       JSON.stringify(input.mautic_tags ?? {}),
+      input.meta_instance_id ?? null,
       JSON.stringify(input.meta_templates ?? {}),
       JSON.stringify(input.enabled_workers ?? {}),
       input.active ?? true,
@@ -141,11 +170,15 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.name !== undefined) setField('name', patch.name);
   if (patch.product_id !== undefined) setField('product_id', patch.product_id);
   if (patch.product_name !== undefined) setField('product_name', patch.product_name);
+  if (patch.expert_name !== undefined) setField('expert_name', patch.expert_name);
   if (patch.sheets_id !== undefined) setField('sheets_id', patch.sheets_id);
+  if (patch.chatwoot_instance_id !== undefined) setField('chatwoot_instance_id', patch.chatwoot_instance_id);
   if (patch.chatwoot_inbox_id !== undefined) setField('chatwoot_inbox_id', patch.chatwoot_inbox_id);
   if (patch.chatwoot_tags !== undefined) setField('chatwoot_tags', patch.chatwoot_tags, true);
+  if (patch.mautic_instance_id !== undefined) setField('mautic_instance_id', patch.mautic_instance_id);
   if (patch.mautic_segment_id !== undefined) setField('mautic_segment_id', patch.mautic_segment_id);
   if (patch.mautic_tags !== undefined) setField('mautic_tags', patch.mautic_tags, true);
+  if (patch.meta_instance_id !== undefined) setField('meta_instance_id', patch.meta_instance_id);
   if (patch.meta_templates !== undefined) setField('meta_templates', patch.meta_templates, true);
   if (patch.enabled_workers !== undefined) setField('enabled_workers', patch.enabled_workers, true);
 

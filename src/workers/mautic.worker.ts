@@ -1,5 +1,4 @@
 import { Worker, type Job } from 'bullmq';
-import { config } from '../config.js';
 import { FatalError } from '../integrations/_shared/errors.js';
 import { normalizePhone } from '../integrations/_shared/phone.js';
 import {
@@ -25,22 +24,22 @@ const defaultAdapter: MauticAdapter = {
   addToSegment,
 };
 
-function readGlobalConfig(): MauticConfig {
-  if (!config.MAUTIC_URL || !config.MAUTIC_CLIENT_ID || !config.MAUTIC_CLIENT_SECRET) {
-    throw new FatalError('Mautic is not fully configured', 'no_credentials');
+function resolveConfig(job: WebhookJob): MauticConfig {
+  const { mautic_url, mautic_client_id, mautic_client_secret } = job.config;
+  if (!mautic_url || !mautic_client_id || !mautic_client_secret) {
+    throw new FatalError(
+      'Mautic instance not configured for this campaign (and no global fallback)',
+      'no_credentials',
+    );
   }
-  return {
-    baseUrl: config.MAUTIC_URL,
-    clientId: config.MAUTIC_CLIENT_ID,
-    clientSecret: config.MAUTIC_CLIENT_SECRET,
-  };
+  return { baseUrl: mautic_url, clientId: mautic_client_id, clientSecret: mautic_client_secret };
 }
 
 export async function processMauticJob(
   job: WebhookJob,
-  cfg: MauticConfig = readGlobalConfig(),
   adapter: MauticAdapter = defaultAdapter,
 ): Promise<void> {
+  const cfg = resolveConfig(job);
   if (!job.contact.email) {
     throw new FatalError('Mautic requires email; webhook had none', 'no_email');
   }
@@ -69,14 +68,12 @@ export async function processMauticJob(
 }
 
 export async function startMauticWorker(
-  cfg?: MauticConfig,
   adapter: MauticAdapter = defaultAdapter,
 ): Promise<Worker<WebhookJob>> {
   const { connection, QUEUE_NAMES } = await import('../queue/index.js');
   return new Worker<WebhookJob>(
     QUEUE_NAMES.mautic,
-    async (bullJob: Job<WebhookJob>) =>
-      processMauticJob(bullJob.data, cfg ?? readGlobalConfig(), adapter),
+    async (bullJob: Job<WebhookJob>) => processMauticJob(bullJob.data, adapter),
     { connection, concurrency: 5 },
   );
 }

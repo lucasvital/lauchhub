@@ -9,6 +9,7 @@ interface NavItem {
 const items: NavItem[] = [
   { to: '/', label: 'Dashboard', match: (p) => p === '/' },
   { to: '/campaigns', label: 'Campanhas', match: (p) => p.startsWith('/campaigns') },
+  { to: '/instances', label: 'Integrações', match: (p) => p.startsWith('/instances') },
   { to: '/logs', label: 'Logs / DLQ', match: (p) => p.startsWith('/logs') },
   { to: '/settings', label: 'Configurações', match: (p) => p.startsWith('/settings') },
 ];

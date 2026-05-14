@@ -22,14 +22,14 @@ const job: WebhookJob = {
     product_id: null,
     product_name: null,
   },
-  config: { meta_template: 'boas_vindas_v3' },
+  config: { meta_token: 'tok', meta_phone_number_id: '111', meta_api_version: 'v20.0', meta_template: 'boas_vindas_v3' },
   received_at: '2026-05-14T18:00:00Z',
 };
 
 describe('processMetaJob', () => {
   it('sends template with normalized phone + first name parameter', async () => {
     const adapter = { sendTemplate: vi.fn().mockResolvedValue({ messageId: 'wamid.1' }) };
-    const r = await processMetaJob(job, cfg, adapter);
+    const r = await processMetaJob(job, adapter);
     expect(adapter.sendTemplate).toHaveBeenCalledWith(cfg, {
       to: '5541999999999',
       templateName: 'boas_vindas_v3',
@@ -41,7 +41,7 @@ describe('processMetaJob', () => {
   it('skips silently when no template configured', async () => {
     const adapter = { sendTemplate: vi.fn() };
     const noTemplate = { ...job, config: { meta_template: null } };
-    const r = await processMetaJob(noTemplate, cfg, adapter);
+    const r = await processMetaJob(noTemplate, adapter);
     expect(r).toEqual({ skipped: true });
     expect(adapter.sendTemplate).not.toHaveBeenCalled();
   });
@@ -49,7 +49,7 @@ describe('processMetaJob', () => {
   it('throws FatalError when no phone', async () => {
     const adapter = { sendTemplate: vi.fn() };
     const ghost = { ...job, contact: { ...job.contact, phone: null } };
-    await expect(processMetaJob(ghost, cfg, adapter)).rejects.toBeInstanceOf(FatalError);
+    await expect(processMetaJob(ghost, adapter)).rejects.toBeInstanceOf(FatalError);
   });
 });
 

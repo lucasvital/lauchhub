@@ -20,7 +20,11 @@ const fakeRow = {
   campaign_token: 'cx-01',
   product_id: null,
   product_name: null,
+  expert_name: null,
   sheets_id: null,
+  chatwoot_instance_id: null,
+  mautic_instance_id: null,
+  meta_instance_id: null,
   chatwoot_inbox_id: null,
   chatwoot_tags: {},
   mautic_segment_id: null,
@@ -85,8 +89,8 @@ describe('campaigns.create', () => {
     });
     expect(r).toEqual(fakeRow);
     const [, params] = queryMock.mock.calls[0]!;
-    // enabled_workers must be stringified jsonb
-    expect(params[10]).toBe(JSON.stringify({ compra_aprovada: ['sheets'] }));
+    // enabled_workers is param #15 (1-indexed) — find it by content match
+    expect(params).toContain(JSON.stringify({ compra_aprovada: ['sheets'] }));
   });
 
   it('throws when insert returns no row', async () => {

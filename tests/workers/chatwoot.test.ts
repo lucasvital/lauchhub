@@ -4,7 +4,7 @@ import { FatalError } from '../../src/integrations/_shared/errors.js';
 import { normalizePhone } from '../../src/integrations/_shared/phone.js';
 import type { WebhookJob } from '../../src/types/job.js';
 
-const cfg = { baseUrl: 'https://chat.test', accountId: 1, token: 'tok' };
+const cfg = { baseUrl: 'https://chat.test', accountId: '1', token: 'tok' };
 
 const job: WebhookJob = {
   correlation_id: 'c1',
@@ -22,7 +22,7 @@ const job: WebhookJob = {
     product_id: null,
     product_name: null,
   },
-  config: { chatwoot_inbox_id: 14, chatwoot_tags: ['aluno', 'cx'] },
+  config: { chatwoot_url: 'https://chat.test', chatwoot_token: 'tok', chatwoot_account_id: '1', chatwoot_inbox_id: 14, chatwoot_tags: ['aluno', 'cx'] },
   received_at: '2026-05-14T18:00:00Z',
 };
 
@@ -50,7 +50,7 @@ describe('processChatwootJob', () => {
       createContact: vi.fn().mockResolvedValue({ id: 42 }),
       mergeLabels: vi.fn().mockResolvedValue(undefined),
     };
-    await processChatwootJob(job, cfg, adapter);
+    await processChatwootJob(job, adapter);
     expect(adapter.searchByPhone).toHaveBeenCalledWith(cfg, '5541999999999');
     expect(adapter.createContact).toHaveBeenCalledWith(cfg, {
       name: 'João',
@@ -67,7 +67,7 @@ describe('processChatwootJob', () => {
       createContact: vi.fn(),
       mergeLabels: vi.fn().mockResolvedValue(undefined),
     };
-    await processChatwootJob(job, cfg, adapter);
+    await processChatwootJob(job, adapter);
     expect(adapter.createContact).not.toHaveBeenCalled();
     expect(adapter.mergeLabels).toHaveBeenCalledWith(cfg, 7, ['aluno', 'cx']);
   });
@@ -79,7 +79,7 @@ describe('processChatwootJob', () => {
       mergeLabels: vi.fn(),
     };
     const noTags = { ...job, config: { ...job.config, chatwoot_tags: [] } };
-    await processChatwootJob(noTags, cfg, adapter);
+    await processChatwootJob(noTags, adapter);
     expect(adapter.mergeLabels).not.toHaveBeenCalled();
   });
 
@@ -90,7 +90,7 @@ describe('processChatwootJob', () => {
       mergeLabels: vi.fn(),
     };
     const ghost = { ...job, contact: { name: 'X', email: null, phone: null } };
-    await expect(processChatwootJob(ghost, cfg, adapter)).rejects.toBeInstanceOf(FatalError);
+    await expect(processChatwootJob(ghost, adapter)).rejects.toBeInstanceOf(FatalError);
   });
 });
 

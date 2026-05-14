@@ -37,13 +37,33 @@ export interface OrderInfo {
 /**
  * Per-campaign config slice relevant to one worker invocation.
  * Each worker reads the subset it cares about.
+ *
+ * For Mautic and Meta, the campaign may override the global instance
+ * credentials (since each expert can have their own Mautic instance and
+ * WhatsApp number). Empty fields fall back to the global `global_config`.
  */
 export interface JobConfigSlice {
+  // Sheets — global service account, per-campaign spreadsheet id
   sheets_id?: string | null;
+
+  // Chatwoot — per-campaign instance (URL/token/account resolved at enrich)
+  chatwoot_url?: string | null;
+  chatwoot_token?: string | null;
+  chatwoot_account_id?: string | null;
   chatwoot_inbox_id?: number | null;
   chatwoot_tags?: string[];
+
+  // Mautic — per-campaign instance (URL/client_id/secret resolved at enrich)
+  mautic_url?: string | null;
+  mautic_client_id?: string | null;
+  mautic_client_secret?: string | null;
   mautic_segment_id?: number | null;
   mautic_tags?: string[];
+
+  // Meta — per-campaign instance (token/phone/api_version resolved at enrich)
+  meta_token?: string | null;
+  meta_phone_number_id?: string | null;
+  meta_api_version?: string;
   meta_template?: string | null;
 }
 
