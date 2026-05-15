@@ -8,7 +8,10 @@ import {
   patchContact,
   type MauticConfig,
 } from '../integrations/mautic/client.js';
+import { logger } from '../shared/logger.js';
 import type { WebhookJob } from '../types/job.js';
+
+const log = logger.child({ worker: 'mautic' });
 
 export interface MauticAdapter {
   findContactByEmail: typeof findContactByEmail;
@@ -39,8 +42,19 @@ export async function processMauticJob(
   job: WebhookJob,
   adapter: MauticAdapter = defaultAdapter,
 ): Promise<void> {
+  const jobLog = log.child({
+    correlation_id: job.correlation_id,
+    campaign_id: job.campaign_id,
+    event: job.event,
+  });
+  jobLog.info(
+    { email: job.contact.email, url: job.config.mautic_url, segment_id: job.config.mautic_segment_id, tags_count: (job.config.mautic_tags ?? []).length },
+    'mautic_job_start',
+  );
+
   const cfg = resolveConfig(job);
   if (!job.contact.email) {
+    jobLog.error('mautic_job_no_email');
     throw new FatalError('Mautic requires email; webhook had none', 'no_email');
   }
 
@@ -49,6 +63,7 @@ export async function processMauticJob(
   const phone = normalizePhone(job.contact.phone);
   const [firstname, ...rest] = (job.contact.name ?? '').split(/\s+/).filter(Boolean);
 
+  let action: 'found' | 'created' | 'patched';
   let contact = await adapter.findContactByEmail(cfg, job.contact.email);
   if (!contact) {
     contact = await adapter.createContact(cfg, {
@@ -58,13 +73,22 @@ export async function processMauticJob(
       mobile: phone ? `+${phone}` : null,
       tags,
     });
+    action = 'created';
   } else if (tags.length > 0) {
     await adapter.patchContact(cfg, contact.id, { tags });
+    action = 'patched';
+  } else {
+    action = 'found';
   }
 
   if (segmentId && contact.id) {
     await adapter.addToSegment(cfg, segmentId, contact.id);
   }
+
+  jobLog.info(
+    { contact_id: contact.id, action, added_to_segment: Boolean(segmentId && contact.id) },
+    'mautic_job_done',
+  );
 }
 
 export async function startMauticWorker(
