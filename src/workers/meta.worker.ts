@@ -130,10 +130,13 @@ export async function processMetaJob(
     });
   }
 
+  // Chatwoot's WhatsApp inbox validates source_id against ^\d{1,20}(-\d{1,20})?$
+  // — i.e. pure digits, NO leading "+". The phone_number on the contact above
+  // keeps the + (that's the E.164 display field); source_id is the raw key.
   const conversation = await adapter.createConversation(cfg, {
     contact_id: contact.id,
     inbox_id: inboxId,
-    source_id: phoneE164,
+    source_id: phone,
   });
 
   const msg = await adapter.sendTemplateMessage(cfg, conversation.id, {

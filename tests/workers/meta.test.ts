@@ -88,7 +88,7 @@ describe('processMetaJob — template send via Chatwoot', () => {
     expect(adapter.createConversation).toHaveBeenCalledWith(cfg, {
       contact_id: 7,
       inbox_id: 14,
-      source_id: '+5541999999999',
+      source_id: '5541999999999',
     });
     expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(cfg, 99, {
       template_name: 'boas_vindas_compra',
