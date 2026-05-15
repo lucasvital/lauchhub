@@ -31,13 +31,25 @@ export async function buildServer() {
   await app.register(cors, {
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
-      const allowed = (process.env.CORS_ALLOWED_ORIGIN ?? '')
+      // Escape hatch for MVP / dev with weird hosts (sslip.io, IPs, etc).
+      // Set CORS_ALLOWED_ORIGIN=* to allow any origin.
+      const allowedRaw = process.env.CORS_ALLOWED_ORIGIN ?? '';
+      if (allowedRaw.trim() === '*') return cb(null, true);
+      const allowed = allowedRaw
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-      const isLocalhost = /^http:\/\/localhost:\d+$/.test(origin);
-      const isVercelPreview = /\.vercel\.app$/.test(new URL(origin).hostname);
-      if (isLocalhost || isVercelPreview || allowed.includes(origin)) return cb(null, true);
+      const isLocalhost = /^https?:\/\/localhost:\d+$/.test(origin);
+      let hostname = '';
+      try {
+        hostname = new URL(origin).hostname;
+      } catch {
+        return cb(new Error('CORS: invalid origin'), false);
+      }
+      const isVercelPreview = /\.vercel\.app$/.test(hostname);
+      const isSslipIo = /\.sslip\.io$/.test(hostname);
+      if (isLocalhost || isVercelPreview || isSslipIo || allowed.includes(origin))
+        return cb(null, true);
       cb(new Error('CORS: origin not allowed'), false);
     },
     credentials: true,
