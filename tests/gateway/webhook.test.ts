@@ -46,7 +46,13 @@ const baseCampaign = {
       skip_if_has_tag: [],
     },
   },
-  meta_templates: { compra_aprovada: 'boas_vindas' },
+  meta_templates: {
+    compra_aprovada: {
+      template_name: 'boas_vindas',
+      language: 'pt_BR',
+      template_params: { '1': '{{contact.first_name}}' },
+    },
+  },
   enabled_workers: { compra_aprovada: ['sheets', 'chatwoot', 'mautic', 'meta'] },
   active: true,
   created_at: new Date(),

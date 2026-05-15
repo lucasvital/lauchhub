@@ -24,7 +24,6 @@ const fakeRow = {
   sheets_id: null,
   chatwoot_instance_id: null,
   mautic_instance_id: null,
-  meta_instance_id: null,
   chatwoot_inbox_id: null,
   chatwoot_tags: {},
   mautic_event_config: {},

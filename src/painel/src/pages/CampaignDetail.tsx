@@ -9,6 +9,9 @@ import {
   type MauticTagOption,
   type MauticSegmentOption,
   type MauticFieldOption,
+  type MetaTemplateConfig,
+  type ChatwootInboxOption,
+  type ChatwootTemplateOption,
   EVENTS,
   WORKERS,
   type EventId,
@@ -67,12 +70,6 @@ export function CampaignDetailPage() {
     queryFn: () => api.get<{ ok: true; items: InstanceSummary[] }>('/api/instances/chatwoot'),
     select: (r) => r.items,
   });
-  const metaInstances = useQuery({
-    queryKey: ['instances', 'meta'],
-    queryFn: () => api.get<{ ok: true; items: InstanceSummary[] }>('/api/instances/meta'),
-    select: (r) => r.items,
-  });
-
   if (q.isLoading) return <div className="py-16 text-center text-xs text-muted">carregando...</div>;
   if (q.error || !q.data) {
     return (
@@ -182,12 +179,6 @@ export function CampaignDetailPage() {
             options={chatwootInstances.data ?? []}
             onChange={(v) => patchCampaign.mutate({ chatwoot_instance_id: v })}
           />
-          <InstanceSelect
-            label="Meta (WhatsApp) instance"
-            value={c.meta_instance_id}
-            options={metaInstances.data ?? []}
-            onChange={(v) => patchCampaign.mutate({ meta_instance_id: v })}
-          />
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Chatwoot inbox ID
@@ -294,6 +285,14 @@ export function CampaignDetailPage() {
         saving={patchCampaign.isPending}
       />
 
+      <MetaTemplatesEditor
+        chatwootInstanceId={c.chatwoot_instance_id}
+        chatwootInboxId={c.chatwoot_inbox_id}
+        config={c.meta_templates}
+        onSave={(next) => patchCampaign.mutate({ meta_templates: next })}
+        saving={patchCampaign.isPending}
+      />
+
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card accent="cyan">
           <h3>// Chatwoot</h3>
@@ -343,17 +342,22 @@ export function CampaignDetailPage() {
           </div>
         </Card>
         <Card accent="amber">
-          <h3>// Meta Templates</h3>
+          <h3>// WhatsApp Templates — resumo</h3>
           <div className="mt-3 space-y-1.5 text-[11px]">
             {Object.entries(c.meta_templates ?? {}).map(([ev, tpl]) => (
               <div key={ev}>
                 <code className="text-accent-2">{ev}</code>{' '}
                 <span className="text-muted">→</span>{' '}
-                <code className="text-accent-4">{tpl}</code>
+                <code className="text-accent-4">{tpl?.template_name ?? '—'}</code>
+                {tpl && Object.keys(tpl.template_params ?? {}).length > 0 && (
+                  <span className="ml-1 text-[10px] text-muted-2">
+                    ({Object.keys(tpl.template_params).length} params)
+                  </span>
+                )}
               </div>
             ))}
             {Object.keys(c.meta_templates ?? {}).length === 0 && (
-              <div className="text-muted-2">— sem templates configurados</div>
+              <div className="text-muted-2">— nenhum evento configurado</div>
             )}
           </div>
         </Card>
@@ -832,5 +836,261 @@ function Chip({
         ✕
       </button>
     </span>
+  );
+}
+
+// ─── WhatsApp template editor (via Chatwoot) ─────────────────────────────────
+
+function emptyMetaTemplateConfig(): MetaTemplateConfig {
+  return { template_name: '', template_params: {}, language: 'pt_BR' };
+}
+
+/** Extracts {{1}}, {{2}}, … placeholders from the template BODY component. */
+function extractTemplatePlaceholders(template: ChatwootTemplateOption): string[] {
+  const body = template.components.find(
+    (c) => c.type === 'BODY' || c.type === 'body',
+  );
+  if (!body?.text) return [];
+  const matches = body.text.match(/\{\{\s*(\d+)\s*\}\}/g) ?? [];
+  const keys = new Set<string>();
+  for (const m of matches) {
+    const k = m.replace(/[{}\s]/g, '');
+    keys.add(k);
+  }
+  return [...keys].sort((a, b) => Number(a) - Number(b));
+}
+
+function useChatwootInboxes(chatwootInstanceId: string | null) {
+  return useQuery({
+    queryKey: ['chatwoot-discovery', chatwootInstanceId, 'inboxes'],
+    enabled: Boolean(chatwootInstanceId),
+    staleTime: 30 * 60_000,
+    queryFn: () =>
+      api.get<{ ok: true; items: ChatwootInboxOption[] }>(
+        `/api/instances/chatwoot/${chatwootInstanceId}/inboxes`,
+      ),
+  });
+}
+
+function useChatwootInboxTemplates(
+  chatwootInstanceId: string | null,
+  inboxId: number | null,
+) {
+  return useQuery({
+    queryKey: ['chatwoot-discovery', chatwootInstanceId, 'templates', inboxId],
+    enabled: Boolean(chatwootInstanceId && inboxId),
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      api.get<{ ok: true; items: ChatwootTemplateOption[] }>(
+        `/api/instances/chatwoot/${chatwootInstanceId}/inboxes/${inboxId}/templates`,
+      ),
+  });
+}
+
+function MetaTemplatesEditor({
+  chatwootInstanceId,
+  chatwootInboxId,
+  config,
+  onSave,
+  saving,
+}: {
+  chatwootInstanceId: string | null;
+  chatwootInboxId: number | null;
+  config: Partial<Record<EventId, MetaTemplateConfig>>;
+  onSave: (next: Partial<Record<EventId, MetaTemplateConfig>>) => void;
+  saving: boolean;
+}) {
+  const [selectedEvent, setSelectedEvent] = useState<EventId>(EVENTS[0].id);
+  const initial = useMemo(
+    () => config[selectedEvent] ?? emptyMetaTemplateConfig(),
+    [config, selectedEvent],
+  );
+  const [draft, setDraft] = useState<MetaTemplateConfig>(initial);
+  const [dirty, setDirty] = useState(false);
+
+  const key = `${selectedEvent}:${JSON.stringify(initial)}`;
+  const [lastKey, setLastKey] = useState(key);
+  if (key !== lastKey) {
+    setDraft(initial);
+    setDirty(false);
+    setLastKey(key);
+  }
+
+  const inboxesQuery = useChatwootInboxes(chatwootInstanceId);
+  const templatesQuery = useChatwootInboxTemplates(chatwootInstanceId, chatwootInboxId);
+
+  const inbox = (inboxesQuery.data?.items ?? []).find((i) => i.id === chatwootInboxId);
+  const templates = templatesQuery.data?.items ?? [];
+  const selectedTemplate = templates.find(
+    (t) => t.name === draft.template_name && t.language === (draft.language ?? 'pt_BR'),
+  );
+  const placeholders = selectedTemplate ? extractTemplatePlaceholders(selectedTemplate) : [];
+
+  function updateName(name: string, language: string) {
+    setDraft((d) => {
+      // Reset params when switching template
+      const isSwitch = name !== d.template_name || language !== (d.language ?? 'pt_BR');
+      return {
+        template_name: name,
+        language,
+        template_params: isSwitch ? {} : d.template_params,
+      };
+    });
+    setDirty(true);
+  }
+  function updateParam(key: string, value: string) {
+    setDraft((d) => ({ ...d, template_params: { ...d.template_params, [key]: value } }));
+    setDirty(true);
+  }
+
+  function save() {
+    if (!draft.template_name) {
+      // Clear: removing the event from the config
+      const { [selectedEvent]: _, ...rest } = config;
+      onSave(rest);
+      return;
+    }
+    onSave({ ...config, [selectedEvent]: draft });
+  }
+
+  function clearEvent() {
+    setDraft(emptyMetaTemplateConfig());
+    setDirty(true);
+  }
+
+  return (
+    <Card accent="amber" className="mt-6">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3>// WhatsApp templates — config por evento</h3>
+          <p className="mt-1.5 text-[11px] text-muted">
+            Templates aprovados na inbox WhatsApp do Chatwoot. O envio rola pela inbox
+            <code className="mx-1 text-accent-2">{chatwootInboxId ?? '?'}</code>
+            ({inbox?.name ?? 'inbox não selecionada'}).
+          </p>
+        </div>
+        <label className="block min-w-[220px]">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+            Evento
+          </span>
+          <select
+            value={selectedEvent}
+            onChange={(e) => setSelectedEvent(e.target.value as EventId)}
+          >
+            {EVENTS.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {!chatwootInstanceId && (
+        <Callout kind="warn">
+          Selecione uma instância Chatwoot acima — o envio de WhatsApp usa a inbox dela.
+        </Callout>
+      )}
+      {chatwootInstanceId && !chatwootInboxId && (
+        <Callout kind="warn">
+          Defina o "Chatwoot inbox ID" da campanha acima pra carregar os templates dessa inbox.
+        </Callout>
+      )}
+
+      <div className="space-y-4">
+        <div>
+          <div className="flex items-center justify-between">
+            <ChipListHeader
+              label="Template"
+              hint="Templates APPROVED na inbox WhatsApp"
+            />
+            <PickerStatus
+              isLoading={templatesQuery.isLoading}
+              isError={templatesQuery.isError}
+              count={templates.length}
+              onRefetch={() => templatesQuery.refetch()}
+            />
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <select
+              value={
+                draft.template_name
+                  ? `${draft.template_name}::${draft.language ?? 'pt_BR'}`
+                  : ''
+              }
+              onChange={(e) => {
+                if (!e.target.value) {
+                  updateName('', 'pt_BR');
+                  return;
+                }
+                const [name, language] = e.target.value.split('::');
+                updateName(name, language);
+              }}
+              disabled={!chatwootInboxId || templatesQuery.isLoading}
+              className="!w-auto min-w-[280px]"
+            >
+              <option value="">— sem template (evento ignorado) —</option>
+              {templates.map((t) => (
+                <option key={`${t.name}-${t.language}`} value={`${t.name}::${t.language}`}>
+                  {t.name} ({t.language}) {t.category ? `· ${t.category}` : ''}
+                </option>
+              ))}
+            </select>
+            {draft.template_name && (
+              <Button variant="ghost" size="sm" onClick={clearEvent}>
+                limpar
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {selectedTemplate && (
+          <div>
+            <ChipListHeader
+              label="Preview do corpo"
+              hint="Placeholders {{N}} são substituídos pelos params abaixo"
+            />
+            <pre className="mt-1.5 whitespace-pre-wrap rounded-sm border border-border bg-dim px-3 py-2 text-[12px] text-text">
+              {selectedTemplate.components.find((c) => c.type === 'BODY' || c.type === 'body')?.text ?? '(template sem BODY)'}
+            </pre>
+          </div>
+        )}
+
+        {selectedTemplate && placeholders.length > 0 && (
+          <div>
+            <ChipListHeader
+              label="Parâmetros do template"
+              hint="Suportam templating: {{contact.first_name}}, {{order.product_name}}, {{utm.utm_source}}, etc."
+            />
+            <div className="mt-1.5 space-y-1.5">
+              {placeholders.map((key) => (
+                <div key={key} className="flex items-center gap-2">
+                  <code className="w-12 shrink-0 text-[12px] text-accent-2">{`{{${key}}}`}</code>
+                  <span className="text-muted-2">=</span>
+                  <input
+                    type="text"
+                    value={draft.template_params[key] ?? ''}
+                    onChange={(e) => updateParam(key, e.target.value)}
+                    placeholder="ex: {{contact.first_name}}"
+                    className="!py-1.5 !px-2.5 !text-[12px] flex-1"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {selectedTemplate && placeholders.length === 0 && (
+          <Callout kind="tip">Esse template não tem variáveis — nada pra preencher.</Callout>
+        )}
+      </div>
+
+      <div className="mt-5 flex items-center justify-end gap-3">
+        {dirty && <span className="text-[11px] text-accent-4">alterações não salvas</span>}
+        <Button disabled={!dirty || saving} onClick={save}>
+          {saving ? 'Salvando...' : 'Salvar evento'}
+        </Button>
+      </div>
+    </Card>
   );
 }

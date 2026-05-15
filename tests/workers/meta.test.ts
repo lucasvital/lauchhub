@@ -1,133 +1,168 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processMetaJob } from '../../src/workers/meta.worker.js';
-import { sendTemplate } from '../../src/integrations/meta/client.js';
-import { FatalError, TransientError } from '../../src/integrations/_shared/errors.js';
-import type { WebhookJob } from '../../src/types/job.js';
+import { FatalError } from '../../src/integrations/_shared/errors.js';
+import type { MetaTemplateConfig, WebhookJob } from '../../src/types/job.js';
 
-const cfg = { apiVersion: 'v20.0', phoneNumberId: '111', token: 'tok' };
+const cfg = { baseUrl: 'https://chat.test', accountId: '1', token: 'cw-tok' };
 
-const job: WebhookJob = {
-  correlation_id: 'c1',
-  campaign_id: 'cmp',
-  campaign_token: 'cx',
-  event: 'compra_aprovada',
-  worker: 'meta',
-  contact: { name: 'João Silva', email: 'j@x.com', phone: '41999999999', first_name: 'João' },
-  order: {
-    id: 'o1',
-    ref: null,
-    status: 'paid',
-    payment_method: 'pix',
-    value: 100,
-    product_id: null,
-    product_name: null,
-  },
-  config: { meta_token: 'tok', meta_phone_number_id: '111', meta_api_version: 'v20.0', meta_template: 'boas_vindas_v3' },
-  received_at: '2026-05-14T18:00:00Z',
+function makeJob(overrides: { template?: MetaTemplateConfig | null; phone?: string | null } = {}): WebhookJob {
+  return {
+    correlation_id: 'c1',
+    campaign_id: 'cmp',
+    campaign_token: 'cx',
+    event: 'compra_aprovada',
+    worker: 'meta',
+    contact: {
+      name: 'João Silva',
+      email: 'j@x.com',
+      phone: overrides.phone === undefined ? '41999999999' : overrides.phone,
+      first_name: 'João',
+    },
+    order: {
+      id: 'o1',
+      ref: null,
+      status: 'paid',
+      payment_method: 'pix',
+      value: 100,
+      product_id: null,
+      product_name: 'Imersão Claude',
+    },
+    utm: {
+      utm_source: 'whatsapp',
+      utm_medium: null,
+      utm_campaign: 'dg-pg03',
+      utm_content: null,
+      utm_term: null,
+    },
+    config: {
+      chatwoot_url: 'https://chat.test',
+      chatwoot_token: 'cw-tok',
+      chatwoot_account_id: '1',
+      chatwoot_inbox_id: 14,
+      meta_template:
+        overrides.template === undefined
+          ? {
+              template_name: 'boas_vindas_compra',
+              language: 'pt_BR',
+              template_params: {
+                '1': '{{contact.first_name}}',
+                '2': '{{order.product_name}}',
+              },
+            }
+          : overrides.template,
+    },
+    received_at: '2026-05-15T18:00:00Z',
+  };
+}
+
+const sampleTemplate = {
+  name: 'boas_vindas_compra',
+  language: 'pt_BR',
+  status: 'APPROVED',
+  category: 'MARKETING',
+  components: [
+    { type: 'BODY', text: 'Olá {{1}}, sua compra de {{2}} foi aprovada!' },
+  ],
 };
 
-describe('processMetaJob', () => {
-  it('sends template with normalized phone + first name parameter', async () => {
-    const adapter = { sendTemplate: vi.fn().mockResolvedValue({ messageId: 'wamid.1' }) };
-    const r = await processMetaJob(job, adapter);
-    expect(adapter.sendTemplate).toHaveBeenCalledWith(cfg, {
-      to: '5541999999999',
-      templateName: 'boas_vindas_v3',
-      parameters: ['João'],
+function makeAdapter() {
+  return {
+    searchByPhone: vi.fn(),
+    createContact: vi.fn(),
+    createConversation: vi.fn().mockResolvedValue({ id: 99, inbox_id: 14 }),
+    listInboxTemplates: vi.fn().mockResolvedValue([sampleTemplate]),
+    sendTemplateMessage: vi.fn().mockResolvedValue({ id: 12345 }),
+  };
+}
+
+describe('processMetaJob — template send via Chatwoot', () => {
+  it('renders params, finds existing contact, creates conversation, sends template', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 7, name: 'João Silva' });
+
+    const r = await processMetaJob(makeJob(), adapter);
+
+    expect(adapter.searchByPhone).toHaveBeenCalledWith(cfg, '5541999999999');
+    expect(adapter.createContact).not.toHaveBeenCalled();
+    expect(adapter.listInboxTemplates).toHaveBeenCalledWith(cfg, 14);
+    expect(adapter.createConversation).toHaveBeenCalledWith(cfg, {
+      contact_id: 7,
+      inbox_id: 14,
+      source_id: '+5541999999999',
     });
-    expect(r).toEqual({ messageId: 'wamid.1' });
+    expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(cfg, 99, {
+      template_name: 'boas_vindas_compra',
+      language: 'pt_BR',
+      category: 'MARKETING',
+      processed_params: { '1': 'João', '2': 'Imersão Claude' },
+      rendered_content: 'Olá João, sua compra de Imersão Claude foi aprovada!',
+    });
+    expect(r).toEqual({ messageId: 12345 });
+  });
+
+  it('creates contact when none exists', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue(null);
+    adapter.createContact.mockResolvedValue({ id: 42 });
+
+    await processMetaJob(makeJob(), adapter);
+
+    expect(adapter.createContact).toHaveBeenCalledWith(cfg, {
+      name: 'João Silva',
+      email: 'j@x.com',
+      phone_number: '+5541999999999',
+      inbox_id: 14,
+    });
+    expect(adapter.createConversation).toHaveBeenCalledWith(
+      cfg,
+      expect.objectContaining({ contact_id: 42 }),
+    );
   });
 
   it('skips silently when no template configured', async () => {
-    const adapter = { sendTemplate: vi.fn() };
-    const noTemplate = { ...job, config: { meta_template: null } };
-    const r = await processMetaJob(noTemplate, adapter);
+    const adapter = makeAdapter();
+    const r = await processMetaJob(makeJob({ template: null }), adapter);
     expect(r).toEqual({ skipped: true });
-    expect(adapter.sendTemplate).not.toHaveBeenCalled();
+    expect(adapter.searchByPhone).not.toHaveBeenCalled();
   });
 
-  it('throws FatalError when no phone', async () => {
-    const adapter = { sendTemplate: vi.fn() };
-    const ghost = { ...job, contact: { ...job.contact, phone: null } };
-    await expect(processMetaJob(ghost, adapter)).rejects.toBeInstanceOf(FatalError);
+  it('throws FatalError when template name not found in inbox', async () => {
+    const adapter = makeAdapter();
+    adapter.listInboxTemplates.mockResolvedValue([]);
+    await expect(processMetaJob(makeJob(), adapter)).rejects.toBeInstanceOf(FatalError);
   });
-});
 
-describe('sendTemplate (HTTP client)', () => {
-  it('returns messageId on success', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ messages: [{ id: 'wamid.42' }] }), { status: 200 }),
+  it('throws FatalError when no phone on contact', async () => {
+    const adapter = makeAdapter();
+    await expect(processMetaJob(makeJob({ phone: null }), adapter)).rejects.toBeInstanceOf(
+      FatalError,
     );
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      const r = await sendTemplate(cfg, { to: '5541999999999', templateName: 't' });
-      expect(r.messageId).toBe('wamid.42');
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 
-  it('classifies 401 as FatalError', async () => {
-    const fetchMock = vi.fn(async () => new Response('', { status: 401 }));
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      await expect(
-        sendTemplate(cfg, { to: '5541999999999', templateName: 't' }),
-      ).rejects.toBeInstanceOf(FatalError);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+  it('throws FatalError when Chatwoot inbox_id missing on campaign', async () => {
+    const adapter = makeAdapter();
+    const job = makeJob();
+    job.config.chatwoot_inbox_id = null;
+    await expect(processMetaJob(job, adapter)).rejects.toBeInstanceOf(FatalError);
   });
 
-  it('classifies 429 as TransientError + parses Retry-After', async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ error: { code: 4 } }), {
-          status: 429,
-          headers: { 'retry-after': '60' },
-        }),
+  it('renders empty string for missing template params (defensive)', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 1 });
+    const job = makeJob({
+      template: {
+        template_name: 'boas_vindas_compra',
+        language: 'pt_BR',
+        template_params: { '1': '{{contact.first_name}}' }, // no key "2"
+      },
+    });
+    await processMetaJob(job, adapter);
+    expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(
+      cfg,
+      99,
+      expect.objectContaining({
+        rendered_content: 'Olá João, sua compra de  foi aprovada!',
+      }),
     );
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      await expect(
-        sendTemplate(cfg, { to: '5541999999999', templateName: 't' }),
-      ).rejects.toBeInstanceOf(TransientError);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('classifies code 100 (template error) as FatalError', async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ error: { code: 100, message: 'template not approved' } }), {
-          status: 400,
-        }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      await expect(
-        sendTemplate(cfg, { to: '5541999999999', templateName: 't' }),
-      ).rejects.toBeInstanceOf(FatalError);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('classifies code 131047 (re-engagement) as FatalError', async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ error: { code: 131047, message: 're-engagement' } }), {
-          status: 400,
-        }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      await expect(
-        sendTemplate(cfg, { to: '5541999999999', templateName: 't' }),
-      ).rejects.toBeInstanceOf(FatalError);
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 });

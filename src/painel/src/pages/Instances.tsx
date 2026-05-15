@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { Card, Button, SectionLabel, Callout } from '../components/ui';
 
-type InstanceKind = 'mautic' | 'chatwoot' | 'meta';
+type InstanceKind = 'mautic' | 'chatwoot';
 
 interface MauticInstance {
   id: string;
@@ -19,15 +19,8 @@ interface ChatwootInstance {
   token: string;
   account_id: string;
 }
-interface MetaInstance {
-  id: string;
-  name: string;
-  token: string;
-  phone_number_id: string;
-  api_version: string;
-}
 
-type AnyInstance = MauticInstance | ChatwootInstance | MetaInstance;
+type AnyInstance = MauticInstance | ChatwootInstance;
 
 export function InstancesPage() {
   const [tab, setTab] = useState<InstanceKind>('mautic');
@@ -38,14 +31,16 @@ export function InstancesPage() {
         <SectionLabel number="06">Credenciais de 3rd-party</SectionLabel>
         <h1>Integrações</h1>
         <p className="mt-3 text-xs text-muted">
-          Cadastre cada conta Mautic / Chatwoot / WhatsApp como uma "instância". Depois, em cada campanha,
-          você escolhe qual instância usar.
+          Cadastre cada conta Mautic e Chatwoot como uma "instância". Depois, em cada campanha,
+          você escolhe qual instância usar. WhatsApp é enviado via Chatwoot — não precisa de
+          credencial Meta separada.
         </p>
       </div>
 
       <Callout kind="info">
-        Cada expert/produto pode ter Mautic e WhatsApp diferentes. Chatwoot é geralmente único, mas
-        suporta múltiplas instâncias caso queira separar produtos.
+        Cada expert/produto pode ter Mautic diferente. Chatwoot é geralmente único por workspace, mas
+        suporta múltiplas instâncias caso queira separar produtos. Templates do WhatsApp são listados
+        do Chatwoot quando você configurar a inbox na campanha.
       </Callout>
 
       <div className="mb-6 mt-6 flex items-center gap-1 border-b border-border">
@@ -53,7 +48,6 @@ export function InstancesPage() {
           [
             { id: 'mautic' as const, label: 'Mautic', color: 'text-accent' },
             { id: 'chatwoot' as const, label: 'Chatwoot', color: 'text-accent-2' },
-            { id: 'meta' as const, label: 'Meta (WhatsApp)', color: 'text-accent-4' },
           ] satisfies { id: InstanceKind; label: string; color: string }[]
         ).map((t) => (
           <button
@@ -72,7 +66,6 @@ export function InstancesPage() {
 
       {tab === 'mautic' && <MauticTab />}
       {tab === 'chatwoot' && <ChatwootTab />}
-      {tab === 'meta' && <MetaTab />}
     </div>
   );
 }
@@ -221,85 +214,6 @@ function NewChatwootForm({ onCreated }: { onCreated: () => void }) {
       <FormField label="URL" value={url} onChange={setUrl} placeholder="https://chat.loyoladigital.com" />
       <FormField label="API Access Token" value={token} onChange={setToken} type="password" />
       <FormField label="Account ID" value={accountId} onChange={setAccountId} />
-      {error && <div className="text-[11px] text-accent-5">{error}</div>}
-      <Button type="submit" disabled={create.isPending}>
-        {create.isPending ? 'Criando...' : '+ Adicionar instância'}
-      </Button>
-    </form>
-  );
-}
-
-// ─── Meta ────────────────────────────────────────────────────────────────────
-
-function MetaTab() {
-  const qc = useQueryClient();
-  const q = useQuery({
-    queryKey: ['instances', 'meta'],
-    queryFn: () => api.get<{ ok: true; items: MetaInstance[] }>('/api/instances/meta'),
-  });
-  const remove = useMutation({
-    mutationFn: (id: string) => api.del(`/api/instances/meta/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['instances', 'meta'] }),
-  });
-  const items = q.data?.items ?? [];
-
-  return (
-    <InstancesList<MetaInstance>
-      kind="meta"
-      accent="amber"
-      items={items}
-      newForm={<NewMetaForm onCreated={() => qc.invalidateQueries({ queryKey: ['instances', 'meta'] })} />}
-      renderRow={(it) => (
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-text">{it.name}</div>
-          <div className="mt-1 text-[11px] text-muted">phone_number_id: {it.phone_number_id}</div>
-          <div className="mt-1 text-[11px] text-muted-2">api: {it.api_version}</div>
-        </div>
-      )}
-      onDelete={(id) => remove.mutate(id)}
-      loading={q.isLoading}
-    />
-  );
-}
-
-function NewMetaForm({ onCreated }: { onCreated: () => void }) {
-  const [name, setName] = useState('');
-  const [token, setToken] = useState('');
-  const [phoneNumberId, setPhoneNumberId] = useState('');
-  const [apiVersion, setApiVersion] = useState('v20.0');
-  const [error, setError] = useState<string | null>(null);
-
-  const create = useMutation({
-    mutationFn: () =>
-      api.post('/api/instances/meta', {
-        name,
-        token,
-        phone_number_id: phoneNumberId,
-        api_version: apiVersion,
-      }),
-    onSuccess: () => {
-      setName('');
-      setToken('');
-      setPhoneNumberId('');
-      setApiVersion('v20.0');
-      onCreated();
-    },
-    onError: () => setError('Falha ao criar — verifique os campos'),
-  });
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (!name.trim() || !token.trim() || !phoneNumberId.trim()) return;
-    create.mutate();
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="space-y-3">
-      <FormField label="Nome" value={name} onChange={setName} placeholder="ex: WhatsApp Expert João" />
-      <FormField label="System User Access Token" value={token} onChange={setToken} type="password" />
-      <FormField label="Phone Number ID" value={phoneNumberId} onChange={setPhoneNumberId} />
-      <FormField label="API Version" value={apiVersion} onChange={setApiVersion} />
       {error && <div className="text-[11px] text-accent-5">{error}</div>}
       <Button type="submit" disabled={create.isPending}>
         {create.isPending ? 'Criando...' : '+ Adicionar instância'}

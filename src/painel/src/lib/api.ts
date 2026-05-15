@@ -108,6 +108,12 @@ export interface MauticEventConfig {
   skip_if_has_tag: string[];
 }
 
+export interface MetaTemplateConfig {
+  template_name: string;
+  template_params: Record<string, string>;
+  language?: string;
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -118,11 +124,10 @@ export interface Campaign {
   sheets_id: string | null;
   chatwoot_instance_id: string | null;
   mautic_instance_id: string | null;
-  meta_instance_id: string | null;
   chatwoot_inbox_id: number | null;
   chatwoot_tags: Record<string, string[]>;
   mautic_event_config: Partial<Record<EventId, MauticEventConfig>>;
-  meta_templates: Record<string, string>;
+  meta_templates: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers: Record<string, WorkerId[]>;
   active: boolean;
   created_at: string;
@@ -150,6 +155,20 @@ export interface MauticFieldOption {
   alias: string;
   label: string;
   type: string;
+}
+
+export interface ChatwootInboxOption {
+  id: number;
+  name: string;
+  channel_type: string;
+}
+
+export interface ChatwootTemplateOption {
+  name: string;
+  language: string;
+  category?: string;
+  status?: string;
+  components: { type: string; text?: string }[];
 }
 
 export interface DashboardSummary {

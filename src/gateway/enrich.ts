@@ -27,15 +27,6 @@ async function resolveMauticCreds(
   return { url: inst.url, username: inst.username, password: inst.password };
 }
 
-async function resolveMetaCreds(
-  campaign: CampaignRow,
-): Promise<{ token: string | null; phone_number_id: string | null; api_version: string }> {
-  if (!campaign.meta_instance_id) return { token: null, phone_number_id: null, api_version: 'v20.0' };
-  const inst = await instances.meta.findById(campaign.meta_instance_id);
-  if (!inst) return { token: null, phone_number_id: null, api_version: 'v20.0' };
-  return { token: inst.token, phone_number_id: inst.phone_number_id, api_version: inst.api_version };
-}
-
 async function sliceConfig(
   campaign: CampaignRow,
   event: EventId,
@@ -64,11 +55,14 @@ async function sliceConfig(
       };
     }
     case 'meta': {
-      const creds = await resolveMetaCreds(campaign);
+      // Meta worker sends WhatsApp templates via Chatwoot's official inbox —
+      // it reuses the campaign's Chatwoot credentials + inbox_id.
+      const creds = await resolveChatwootCreds(campaign);
       return {
-        meta_token: creds.token,
-        meta_phone_number_id: creds.phone_number_id,
-        meta_api_version: creds.api_version,
+        chatwoot_url: creds.url,
+        chatwoot_token: creds.token,
+        chatwoot_account_id: creds.account_id,
+        chatwoot_inbox_id: campaign.chatwoot_inbox_id,
         meta_template: campaign.meta_templates[event] ?? null,
       };
     }

@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import * as instances from '../../db/instances.js';
 import {
+  listInboxTemplates,
+  listInboxes,
+} from '../../integrations/chatwoot/client.js';
+import {
   listContactFields,
   listSegments,
   listTags,
@@ -37,26 +41,6 @@ async function pingMautic(inst: instances.MauticInstanceRow): Promise<PingResult
       headers: { Authorization: `Basic ${auth}` },
       signal: AbortSignal.timeout(5000),
     });
-    return {
-      ok: res.ok,
-      latency_ms: Date.now() - start,
-      error: res.ok ? undefined : `http_${res.status}`,
-    };
-  } catch (err) {
-    return { ok: false, latency_ms: Date.now() - start, error: String(err) };
-  }
-}
-
-async function pingMeta(inst: instances.MetaInstanceRow): Promise<PingResult> {
-  const start = Date.now();
-  try {
-    const res = await fetch(
-      `https://graph.facebook.com/${inst.api_version}/${inst.phone_number_id}`,
-      {
-        headers: { Authorization: `Bearer ${inst.token}` },
-        signal: AbortSignal.timeout(5000),
-      },
-    );
     return {
       ok: res.ok,
       latency_ms: Date.now() - start,
@@ -225,53 +209,51 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
     },
   );
 
-  // ─── Meta ──────────────────────────────────────────────────────────────────
+  // (Meta instance CRUD removed — WhatsApp sending is now done via Chatwoot's
+  //  official WhatsApp inbox. See routes below for Chatwoot template discovery.)
 
-  app.get('/api/instances/meta', { preHandler: app.requireAuth }, async () => {
-    const items = await instances.meta.list();
-    return { ok: true, items };
-  });
+  // Chatwoot discovery — used by the painel to populate inbox + template
+  // pickers in the campaign event editor.
 
-  app.post<{ Body: instances.MetaInstanceInput }>(
-    '/api/instances/meta',
+  function chatwootCfg(inst: instances.ChatwootInstanceRow) {
+    return { baseUrl: inst.url, accountId: inst.account_id, token: inst.token };
+  }
+
+  app.get<{ Params: { id: string } }>(
+    '/api/instances/chatwoot/:id/inboxes',
     { preHandler: app.requireAuth },
     async (req, reply) => {
-      const b = req.body ?? ({} as instances.MetaInstanceInput);
-      if (!b.name || !b.token || !b.phone_number_id) {
-        return reply.code(400).send({ ok: false, error: 'missing_fields' });
-      }
-      const row = await instances.meta.create(b);
-      return reply.code(201).send({ ok: true, item: row });
-    },
-  );
-
-  app.patch<{ Params: { id: string }; Body: Partial<instances.MetaInstanceInput> }>(
-    '/api/instances/meta/:id',
-    { preHandler: app.requireAuth },
-    async (req, reply) => {
-      const row = await instances.meta.update(req.params.id, req.body ?? {});
-      if (!row) return reply.code(404).send({ ok: false, error: 'not_found' });
-      return { ok: true, item: row };
-    },
-  );
-
-  app.delete<{ Params: { id: string } }>(
-    '/api/instances/meta/:id',
-    { preHandler: app.requireAuth },
-    async (req, reply) => {
-      const ok = await instances.meta.remove(req.params.id);
-      if (!ok) return reply.code(404).send({ ok: false, error: 'not_found' });
-      return { ok: true };
-    },
-  );
-
-  app.post<{ Params: { id: string } }>(
-    '/api/instances/meta/:id/test',
-    { preHandler: app.requireAuth },
-    async (req, reply) => {
-      const inst = await instances.meta.findById(req.params.id);
+      const inst = await instances.chatwoot.findById(req.params.id);
       if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
-      return pingMeta(inst);
+      try {
+        const items = await listInboxes(chatwootCfg(inst));
+        return { ok: true, items };
+      } catch (err) {
+        return reply
+          .code(502)
+          .send({ ok: false, error: 'chatwoot_unreachable', detail: String(err) });
+      }
+    },
+  );
+
+  app.get<{ Params: { id: string; inboxId: string } }>(
+    '/api/instances/chatwoot/:id/inboxes/:inboxId/templates',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const inst = await instances.chatwoot.findById(req.params.id);
+      if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
+      const inboxId = Number(req.params.inboxId);
+      if (!Number.isFinite(inboxId)) {
+        return reply.code(400).send({ ok: false, error: 'invalid_inbox_id' });
+      }
+      try {
+        const items = await listInboxTemplates(chatwootCfg(inst), inboxId);
+        return { ok: true, items };
+      } catch (err) {
+        return reply
+          .code(502)
+          .send({ ok: false, error: 'chatwoot_unreachable', detail: String(err) });
+      }
     },
   );
 }

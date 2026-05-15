@@ -62,6 +62,20 @@ export interface MauticEventConfig {
 }
 
 /**
+ * Per-event WhatsApp template config, sent via Chatwoot's official WhatsApp
+ * Cloud inbox (NOT direct Meta Cloud API).
+ *
+ * `template_params` keys are positional ("1", "2", "3", ...) matching the
+ * template body placeholders {{1}}, {{2}} in WhatsApp template definitions.
+ * Values support {{path.to.value}} templating resolved at job processing time.
+ */
+export interface MetaTemplateConfig {
+  template_name: string;
+  template_params: Record<string, string>;
+  language?: string; // default 'pt_BR'
+}
+
+/**
  * Per-campaign config slice relevant to one worker invocation.
  * Each worker reads the subset it cares about.
  *
@@ -87,11 +101,11 @@ export interface JobConfigSlice {
   mautic_password?: string | null;
   mautic_event?: MauticEventConfig | null;
 
-  // Meta — per-campaign instance (token/phone/api_version resolved at enrich)
-  meta_token?: string | null;
-  meta_phone_number_id?: string | null;
-  meta_api_version?: string;
-  meta_template?: string | null;
+  // Meta (WhatsApp) — sent via Chatwoot inbox, NOT direct Meta Cloud API.
+  // Worker reuses the campaign's chatwoot_* fields above for credentials +
+  // inbox. The template config is resolved per event from
+  // campaign.meta_templates[event].
+  meta_template?: MetaTemplateConfig | null;
 }
 
 export interface WebhookJob {
