@@ -14,6 +14,9 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    # Apply pending DB migrations before starting the gateway.
+    # Only the gateway runs migrations — workers wait via depends_on healthcheck.
+    command: ['sh', '-c', 'npm run migrate:prod && node dist/gateway/server.js']
     environment:
       NODE_ENV: production
       PORT: 3000

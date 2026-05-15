@@ -48,10 +48,13 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     }
 
     const token = app.jwt.sign({ user }, { expiresIn: `${SESSION_TTL_SECONDS}s` });
+    const isProd = config.NODE_ENV === 'production';
     reply.setCookie(SESSION_COOKIE, token, {
       httpOnly: true,
-      secure: config.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProd,
+      // sameSite=none required for cross-origin (Vercel front + Coolify back).
+      // Browsers force `secure: true` when sameSite=none.
+      sameSite: isProd ? 'none' : 'lax',
       path: '/',
       maxAge: SESSION_TTL_SECONDS,
     });
@@ -59,7 +62,12 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/logout', async (_req, reply) => {
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    const isProd = config.NODE_ENV === 'production';
+    reply.clearCookie(SESSION_COOKIE, {
+      path: '/',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+    });
     return reply.send({ ok: true });
   });
 

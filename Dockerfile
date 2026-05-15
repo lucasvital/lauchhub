@@ -23,11 +23,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Migrations need source (TypeScript) — copy migrations dir as-is
-COPY src/db/migrations ./src/db/migrations
-COPY tsconfig.migrate.json ./
-
-# Copy compiled output
+# Copy compiled output (migrations included via tsc — see scripts.migrate:prod)
 COPY --from=builder /app/dist ./dist
 
 # Add wget for HEALTHCHECK (alpine doesn't have it by default)

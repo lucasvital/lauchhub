@@ -20,7 +20,8 @@
     "test:watch": "vitest",
     "migrate": "node-pg-migrate up --migrations-dir src/db/migrations --migration-file-language ts --tsconfig tsconfig.migrate.json",
     "migrate:down": "node-pg-migrate down --migrations-dir src/db/migrations --migration-file-language ts --tsconfig tsconfig.migrate.json",
-    "migrate:create": "node-pg-migrate create --migrations-dir src/db/migrations --migration-file-language ts"
+    "migrate:create": "node-pg-migrate create --migrations-dir src/db/migrations --migration-file-language ts",
+    "migrate:prod": "node-pg-migrate up --migrations-dir dist/db/migrations --migration-file-language js"
   },
   "dependencies": {
     "@bull-board/api": "^5.23.0",
@@ -33,6 +34,7 @@
     "fastify": "^4.28.1",
     "googleapis": "^171.4.0",
     "ioredis": "^5.4.1",
+    "node-pg-migrate": "^8.0.4",
     "pg": "^8.13.0",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
@@ -45,7 +47,6 @@
     "@typescript-eslint/parser": "^8.8.0",
     "eslint": "^9.11.1",
     "eslint-config-prettier": "^9.1.0",
-    "node-pg-migrate": "^8.0.4",
     "prettier": "^3.3.3",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
