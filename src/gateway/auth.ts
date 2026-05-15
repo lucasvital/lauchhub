@@ -26,6 +26,14 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     cookie: { cookieName: SESSION_COOKIE, signed: false },
   });
 
+  /**
+   * Auth accepts EITHER mechanism, in this order:
+   *   1. Authorization: Bearer <jwt>      ← used by Safari (ITP blocks 3rd-party cookies)
+   *   2. Cookie `lh_session=<jwt>`        ← used by Chrome/Firefox/Edge cross-origin
+   *
+   * The login response returns both a Set-Cookie header AND a `token` field
+   * so the client picks whichever works for its browser.
+   */
   app.decorate('requireAuth', async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       await req.jwtVerify();
@@ -42,7 +50,6 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     if (!config.ADMIN_PASSWORD) {
       return reply.code(503).send({ ok: false, error: 'admin_not_configured' });
     }
-    // Constant-time comparison would be ideal — but for single-admin MVP this is acceptable
     if (user !== config.ADMIN_USER || password !== config.ADMIN_PASSWORD) {
       return reply.code(401).send({ ok: false, error: 'invalid_credentials' });
     }
@@ -52,13 +59,13 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     reply.setCookie(SESSION_COOKIE, token, {
       httpOnly: true,
       secure: isProd,
-      // sameSite=none required for cross-origin (Vercel front + Coolify back).
-      // Browsers force `secure: true` when sameSite=none.
       sameSite: isProd ? 'none' : 'lax',
       path: '/',
       maxAge: SESSION_TTL_SECONDS,
     });
-    return reply.send({ ok: true, user });
+    // Token also returned in body — Safari/ITP-blocked clients keep it in
+    // localStorage and send as `Authorization: Bearer <token>`.
+    return reply.send({ ok: true, user, token, expires_in: SESSION_TTL_SECONDS });
   });
 
   app.post('/api/logout', async (_req, reply) => {

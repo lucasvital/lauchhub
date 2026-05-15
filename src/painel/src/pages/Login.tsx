@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type ApiError } from '../lib/api';
+import { api, auth, type ApiError } from '../lib/api';
 import { Button } from '../components/ui';
 
 export function LoginPage() {
@@ -15,7 +15,13 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await api.post('/api/login', { user, password });
+      const r = await api.post<{ ok: true; user: string; token: string }>('/api/login', {
+        user,
+        password,
+      });
+      // Store JWT in localStorage as a fallback for Safari (ITP blocks cookies).
+      // Backend also sets an HttpOnly cookie — whichever the browser accepts wins.
+      if (r.token) auth.setToken(r.token);
       navigate('/');
     } catch (err) {
       const apiErr = err as ApiError;

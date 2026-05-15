@@ -9,7 +9,7 @@ import {
   useNavigate,
 } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from './lib/api';
+import { api, auth } from './lib/api';
 import { Sidebar } from './components/Sidebar';
 import { LoginPage } from './pages/Login';
 import { DashboardPage } from './pages/Dashboard';
@@ -60,6 +60,7 @@ function AuthGate() {
     } catch {
       /* ignore */
     }
+    auth.setToken(null);
     qc.clear();
     navigate('/login');
   }

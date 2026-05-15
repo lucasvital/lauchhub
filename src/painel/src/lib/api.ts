@@ -1,4 +1,5 @@
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const TOKEN_KEY = 'lh_token';
 
 export interface ApiError extends Error {
   status: number;
@@ -16,18 +17,46 @@ class HttpError extends Error implements ApiError {
   }
 }
 
+/**
+ * Auth token storage.
+ * Safari (and any browser with ITP blocking 3rd-party cookies) needs the JWT
+ * sent as `Authorization: Bearer`. We keep it in localStorage and always send
+ * the header when present; the backend also accepts the HttpOnly cookie set
+ * by /api/login as fallback.
+ */
+export const auth = {
+  getToken(): string | null {
+    try {
+      return localStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  },
+  setToken(t: string | null): void {
+    try {
+      if (t) localStorage.setItem(TOKEN_KEY, t);
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* ignore */
+    }
+  },
+};
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = auth.getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((init.headers as Record<string, string>) ?? {}),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
+    headers,
     ...init,
   });
 
   if (res.status === 401) {
-    // Let route guards react via thrown error
     throw new HttpError('unauthorized', 401, 'unauthorized');
   }
 
