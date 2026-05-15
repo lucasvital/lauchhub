@@ -27,14 +27,9 @@ async function pingChatwoot(inst: instances.ChatwootInstanceRow): Promise<PingRe
 async function pingMautic(inst: instances.MauticInstanceRow): Promise<PingResult> {
   const start = Date.now();
   try {
-    const res = await fetch(`${inst.url.replace(/\/$/, '')}/oauth/v2/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: inst.client_id,
-        client_secret: inst.client_secret,
-      }).toString(),
+    const auth = Buffer.from(`${inst.username}:${inst.password}`, 'utf8').toString('base64');
+    const res = await fetch(`${inst.url.replace(/\/$/, '')}/api/users/self`, {
+      headers: { Authorization: `Basic ${auth}` },
       signal: AbortSignal.timeout(5000),
     });
     return {
@@ -85,7 +80,7 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
     { preHandler: app.requireAuth },
     async (req, reply) => {
       const b = req.body ?? ({} as instances.MauticInstanceInput);
-      if (!b.name || !b.url || !b.client_id || !b.client_secret) {
+      if (!b.name || !b.url || !b.username || !b.password) {
         return reply.code(400).send({ ok: false, error: 'missing_fields' });
       }
       const row = await instances.mautic.create(b);

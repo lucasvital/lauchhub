@@ -25,14 +25,14 @@ const defaultAdapter: MauticAdapter = {
 };
 
 function resolveConfig(job: WebhookJob): MauticConfig {
-  const { mautic_url, mautic_client_id, mautic_client_secret } = job.config;
-  if (!mautic_url || !mautic_client_id || !mautic_client_secret) {
+  const { mautic_url, mautic_username, mautic_password } = job.config;
+  if (!mautic_url || !mautic_username || !mautic_password) {
     throw new FatalError(
       'Mautic instance not configured for this campaign (and no global fallback)',
       'no_credentials',
     );
   }
-  return { baseUrl: mautic_url, clientId: mautic_client_id, clientSecret: mautic_client_secret };
+  return { baseUrl: mautic_url, username: mautic_username, password: mautic_password };
 }
 
 export async function processMauticJob(

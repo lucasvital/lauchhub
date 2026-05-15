@@ -291,6 +291,9 @@ launchhub/
 │   ├── db/
 │   │   ├── index.ts              # Postgres connection
 │   │   ├── campaigns.ts
+│   │   ├── instances.ts          # CRUD para mautic/chatwoot/meta_instances
+│   │   ├── global-config.ts      # config app + Sheets service account
+│   │   ├── unmatched.ts          # eventos sem campanha conhecida
 │   │   └── migrations/
 │   ├── ui/                       # React frontend
 │   └── config.ts                 # Env vars
@@ -304,32 +307,83 @@ launchhub/
 
 ## Config Store — Schema
 
+O sistema é **multi-tenant**: uma instalação do LaunchHub serve várias campanhas, cada uma podendo usar contas diferentes de Mautic, Meta e Chatwoot. As credenciais ficam em tabelas de **instâncias reutilizáveis** (`*_instances`), referenciadas via FK por `campaigns`. Trocar credencial é UPDATE numa linha, sem redeploy.
+
+> **Sheets é a exceção:** uma única service account global (env var `GOOGLE_SERVICE_ACCOUNT_JSON`) é compartilhada entre todas as planilhas. O usuário compartilha cada Sheet com o email dessa conta. Simplifica onboarding — não precisa criar service account por cliente.
+
+### Tabela `mautic_instances`
+
+```sql
+CREATE TABLE mautic_instances (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text        NOT NULL,  -- ex: "Mautic Expert João"
+  url         text        NOT NULL,
+  username    text        NOT NULL,  -- HTTP Basic Auth
+  password    text        NOT NULL,
+  created_at  timestamptz DEFAULT now(),
+  updated_at  timestamptz DEFAULT now()
+);
+```
+
+### Tabela `meta_instances`
+
+```sql
+CREATE TABLE meta_instances (
+  id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             text        NOT NULL,  -- ex: "WhatsApp Expert João"
+  token            text        NOT NULL,  -- System User access token
+  phone_number_id  text        NOT NULL,
+  api_version      text        NOT NULL DEFAULT 'v20.0',
+  created_at       timestamptz DEFAULT now(),
+  updated_at       timestamptz DEFAULT now()
+);
+```
+
+### Tabela `chatwoot_instances`
+
+```sql
+CREATE TABLE chatwoot_instances (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text        NOT NULL,  -- ex: "Chatwoot Loyola"
+  url         text        NOT NULL,  -- ex: "https://chat.loyoladigital.com"
+  token       text        NOT NULL,  -- api_access_token
+  account_id  text        NOT NULL,  -- ID da conta dentro do Chatwoot
+  created_at  timestamptz DEFAULT now(),
+  updated_at  timestamptz DEFAULT now()
+);
+```
+
 ### Tabela `campaigns`
 
 ```sql
 CREATE TABLE campaigns (
-  id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name                text        NOT NULL,
-  campaign_token      text        UNIQUE NOT NULL, -- usado na URL do webhook
-  product_id          text,                        -- product_id do Kiwify
+  id                    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                  text        NOT NULL,
+  expert_name           text,
+  campaign_token        text        UNIQUE NOT NULL, -- usado na URL do webhook
+  product_id            text,                        -- product_id do Kiwify
 
-  -- Google Sheets
-  sheets_id           text,
+  -- FKs para instâncias (NULL = worker desativado pra essa campanha)
+  mautic_instance_id    uuid REFERENCES mautic_instances(id)    ON DELETE SET NULL,
+  meta_instance_id      uuid REFERENCES meta_instances(id)      ON DELETE SET NULL,
+  chatwoot_instance_id  uuid REFERENCES chatwoot_instances(id)  ON DELETE SET NULL,
 
-  -- Chatwoot
-  chatwoot_inbox_id   integer,
-  chatwoot_tags       jsonb,  -- { "compra_aprovada": ["aluno","fzl1"] }
+  -- Recursos dentro de cada conta
+  sheets_id             text,     -- ID da planilha (service account é global)
+  chatwoot_inbox_id     integer,
+  mautic_segment_id     integer,
 
-  -- Mautic
-  mautic_segment_id   integer,
-  mautic_tags         jsonb,  -- { "compra_aprovada": ["comprador-fzl1"] }
+  -- Mapeamentos evento → ação
+  chatwoot_tags         jsonb,    -- { "compra_aprovada": ["aluno","fzl1"] }
+  mautic_tags           jsonb,    -- { "compra_aprovada": ["comprador-fzl1"] }
+  meta_templates        jsonb,    -- { "compra_aprovada": "boas_vindas_fzl1" }
 
-  -- Meta
-  meta_templates      jsonb,  -- { "compra_aprovada": "boas_vindas_fzl1" }
+  -- Quais workers rodam por evento
+  enabled_workers       jsonb,    -- { "compra_aprovada": ["sheets","chatwoot","mautic","meta"] }
 
-  active              boolean     DEFAULT true,
-  created_at          timestamptz DEFAULT now(),
-  updated_at          timestamptz DEFAULT now()
+  active                boolean     DEFAULT true,
+  created_at            timestamptz DEFAULT now(),
+  updated_at            timestamptz DEFAULT now()
 );
 ```
 
@@ -337,10 +391,13 @@ CREATE TABLE campaigns (
 
 ```sql
 CREATE TABLE global_config (
-  key    text PRIMARY KEY, -- ex: "chatwoot_url", "mautic_url"
-  value  text
+  key         text PRIMARY KEY,  -- ex: "google_service_account_json"
+  value       text,
+  updated_at  timestamptz DEFAULT now()
 );
 ```
+
+> Secrets (`mautic_password`, `chatwoot_token`, `meta_token`, `google_service_account_json`) são mascarados em listagens via `isSecret()`. Workers leem valor real em runtime via `getRawValue()`.
 
 ### Tabela `unmatched_events`
 
@@ -386,39 +443,55 @@ fastify.post('/webhook/:token', async (req, reply) => {
 
 ## Workers
 
+> Todo worker recebe um `WebhookJob` enriquecido pelo gateway. O `enrich.ts` resolve as FKs `campaign.{mautic|meta|chatwoot}_instance_id` em credenciais e injeta numa `JobConfigSlice`. Se a campanha não tem instância para aquele worker, o worker lança `FatalError('no_credentials')` e o job vai pra DLQ.
+
 ### Sheets Worker
 
-Appenda linha na planilha da campanha via Google Sheets API v4. Auth via service account JSON.
+Appenda linha na planilha da campanha via Google Sheets API v4.
 
-Colunas: `timestamp`, `event`, `name`, `email`, `phone`, `order_id`, `payment_method`, `value`
+- **Auth:** service account JSON global (`GOOGLE_SERVICE_ACCOUNT_JSON` env var) — compartilhada entre todas as planilhas
+- **Target:** `campaign.sheets_id`
+- **Colunas:** `timestamp`, `event`, `name`, `email`, `phone`, `order_id`, `payment_method`, `value`
 
 ### Chatwoot Worker
 
 > ⚠ A API de labels do Chatwoot **sobrescreve** ao invés de acumular. Sempre fazer GET das labels existentes, merge, e então POST.
 
 ```
-1. GET  /api/v1/accounts/:id/contacts/search?q={phone}
-2. if not found → POST /api/v1/accounts/:id/contacts
-3. GET  /api/v1/accounts/:id/contacts/:cid/labels  // busca labels atuais
-4. POST /api/v1/accounts/:id/contacts/:cid/labels  // merge + novas tags
+1. GET  {url}/api/v1/accounts/{account_id}/contacts/search?q={phone}
+2. if not found → POST {url}/api/v1/accounts/{account_id}/contacts
+3. GET  {url}/api/v1/accounts/{account_id}/contacts/{cid}/labels  // busca labels atuais
+4. POST {url}/api/v1/accounts/{account_id}/contacts/{cid}/labels  // merge + novas tags
 ```
 
-Auth: `api_access_token` no header. Base URL: `https://chat.loyoladigital.com`
+- **Auth:** `api_access_token` no header, vindo de `chatwoot_instances.token`
+- **Base URL:** `chatwoot_instances.url`
+- **Account ID:** `chatwoot_instances.account_id`
+- **Inbox:** `campaign.chatwoot_inbox_id`
 
 ### Mautic Worker
 
 ```
-1. GET  /api/contacts?search=email:{email}
-2. if not found → POST /api/contacts/new
-3. PATCH /api/contacts/:id/edit              // aplica tags
-4. POST  /api/segments/:segId/contact/:cid/add
+1. GET   {url}/api/contacts?search=email:{email}
+2. if not found → POST {url}/api/contacts/new
+3. PATCH {url}/api/contacts/{id}/edit              // aplica tags
+4. POST  {url}/api/segments/{segId}/contact/{cid}/add
 ```
 
-Auth: OAuth2 (client_id + client_secret). Base URL: variável `MAUTIC_URL`.
+- **Auth:** HTTP Basic Auth — `Authorization: Basic base64(user:pass)` com `username` + `password` de `mautic_instances`
+- **Base URL:** `mautic_instances.url` (cada expert tem seu próprio Mautic self-hosted)
+- **Segment:** `campaign.mautic_segment_id`
+- **Helper:** `basicAuthHeader()` em `src/integrations/mautic/auth.ts`
+
+> ⚠ Requer que Basic Auth esteja habilitado em cada Mautic: **Settings → Configuration → API Settings → HTTP basic auth = Yes**.
 
 ### Meta Worker
 
-Envia template HSM via Meta Cloud API. Template configurável por evento da campanha. Telefone formatado com DDI 55.
+Envia template HSM via Meta Cloud API. Telefone formatado com DDI 55.
+
+- **Auth:** `Authorization: Bearer {token}` com `token` de `meta_instances`
+- **Endpoint:** `POST https://graph.facebook.com/{api_version}/{phone_number_id}/messages` — `api_version` e `phone_number_id` de `meta_instances`
+- **Template:** `campaign.meta_templates[evento]`
 
 ---
 
@@ -478,11 +551,14 @@ Jobs na DLQ ficam visíveis no painel com opção de reprocessar manualmente.
 |---|---|
 | `/` | Dashboard — jobs em tempo real, métricas |
 | `/campaigns` | Lista de campanhas ativas |
-| `/campaigns/new` | Cadastro — gera webhook URL automaticamente |
+| `/campaigns/new` | Cadastro — escolhe quais instâncias usar, gera webhook URL automaticamente |
 | `/campaigns/:id` | Editar campanha e configurações por evento |
-| `/settings` | Config global: URLs, tokens, service account |
+| `/instances` | Tabs Mautic / Chatwoot / Meta — CRUD de credenciais (com botão "testar") |
+| `/settings` | Config global — Sheets service account, URLs/tokens base |
 | `/queue` | Bull Board — monitor de filas em tempo real |
 | `/logs` | Eventos não mapeados e dead letter queue |
+
+> Form de campanha tem dropdowns que listam as instâncias cadastradas. Cada dropdown é opcional — campanha sem `mautic_instance_id` simplesmente não dispara worker Mautic. O botão "testar" em cada instância faz ping autenticado (Mautic: `GET /api/users/self`; Chatwoot: `GET /api/v1/accounts/{id}`; Meta: `GET /{api_version}/{phone_number_id}`).
 
 ---
 
@@ -545,32 +621,23 @@ networks:
 
 ## Variáveis de Ambiente
 
+> Env vars cobrem a aplicação + a service account global do Sheets. Credenciais multi-tenant de Mautic, Meta e Chatwoot ficam no banco (`*_instances`), gerenciadas pelo painel.
+
 ```env
 # App
 PORT=3000
 NODE_ENV=production
+LOG_LEVEL=info
 ADMIN_USER=lucas
 ADMIN_PASSWORD=
+SESSION_SECRET=          # min 32 chars
+CORS_ALLOWED_ORIGIN=     # opcional
 
 # Banco
 DATABASE_URL=postgresql://user:pass@postgres:5432/launchhub
 REDIS_URL=redis://redis:6379
 
-# Chatwoot (self-hosted)
-CHATWOOT_URL=https://chat.loyoladigital.com
-CHATWOOT_TOKEN=
-CHATWOOT_ACCOUNT_ID=
-
-# Mautic (self-hosted)
-MAUTIC_URL=
-MAUTIC_CLIENT_ID=
-MAUTIC_CLIENT_SECRET=
-
-# Meta Cloud API
-META_TOKEN=
-META_PHONE_NUMBER_ID=
-
-# Google Sheets
+# Google Sheets — service account global, compartilhada entre todas as planilhas
 GOOGLE_SERVICE_ACCOUNT_JSON=
 ```
 

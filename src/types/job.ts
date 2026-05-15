@@ -53,10 +53,10 @@ export interface JobConfigSlice {
   chatwoot_inbox_id?: number | null;
   chatwoot_tags?: string[];
 
-  // Mautic — per-campaign instance (URL/client_id/secret resolved at enrich)
+  // Mautic — per-campaign instance (URL/username/password resolved at enrich)
   mautic_url?: string | null;
-  mautic_client_id?: string | null;
-  mautic_client_secret?: string | null;
+  mautic_username?: string | null;
+  mautic_password?: string | null;
   mautic_segment_id?: number | null;
   mautic_tags?: string[];
 

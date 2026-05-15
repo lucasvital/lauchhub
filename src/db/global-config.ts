@@ -8,7 +8,7 @@ export interface GlobalConfigRow {
 
 const SECRET_KEYS = new Set([
   'chatwoot_token',
-  'mautic_client_secret',
+  'mautic_password',
   'meta_token',
   'google_service_account_json',
 ]);

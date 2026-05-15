@@ -9,8 +9,8 @@ interface MauticInstance {
   id: string;
   name: string;
   url: string;
-  client_id: string;
-  client_secret: string;
+  username: string;
+  password: string;
 }
 interface ChatwootInstance {
   id: string;
@@ -103,7 +103,7 @@ function MauticTab() {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-text">{it.name}</div>
           <div className="mt-1 text-[11px] text-muted">{it.url}</div>
-          <div className="mt-1 text-[10px] text-muted-2">client_id: {it.client_id}</div>
+          <div className="mt-1 text-[10px] text-muted-2">user: {it.username}</div>
         </div>
       )}
       onDelete={(id) => remove.mutate(id)}
@@ -115,18 +115,18 @@ function MauticTab() {
 function NewMauticForm({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const create = useMutation({
     mutationFn: () =>
-      api.post('/api/instances/mautic', { name, url, client_id: clientId, client_secret: clientSecret }),
+      api.post('/api/instances/mautic', { name, url, username, password }),
     onSuccess: () => {
       setName('');
       setUrl('');
-      setClientId('');
-      setClientSecret('');
+      setUsername('');
+      setPassword('');
       onCreated();
     },
     onError: () => setError('Falha ao criar — verifique os campos'),
@@ -135,7 +135,7 @@ function NewMauticForm({ onCreated }: { onCreated: () => void }) {
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!name.trim() || !url.trim() || !clientId.trim() || !clientSecret.trim()) return;
+    if (!name.trim() || !url.trim() || !username.trim() || !password.trim()) return;
     create.mutate();
   }
 
@@ -143,8 +143,8 @@ function NewMauticForm({ onCreated }: { onCreated: () => void }) {
     <form onSubmit={onSubmit} className="space-y-3">
       <FormField label="Nome" value={name} onChange={setName} placeholder="ex: Mautic Expert João" />
       <FormField label="URL" value={url} onChange={setUrl} placeholder="https://crm.expert.com" />
-      <FormField label="OAuth2 Client ID" value={clientId} onChange={setClientId} />
-      <FormField label="OAuth2 Client Secret" value={clientSecret} onChange={setClientSecret} type="password" />
+      <FormField label="Usuário" value={username} onChange={setUsername} placeholder="admin" />
+      <FormField label="Senha" value={password} onChange={setPassword} type="password" />
       {error && <div className="text-[11px] text-accent-5">{error}</div>}
       <Button type="submit" disabled={create.isPending}>
         {create.isPending ? 'Criando...' : '+ Adicionar instância'}

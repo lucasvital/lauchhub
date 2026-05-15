@@ -1,5 +1,5 @@
 import { FatalError, TransientError, classifyHttpError } from '../_shared/errors.js';
-import { getAccessToken, type MauticAuthConfig } from './auth.js';
+import { basicAuthHeader, type MauticAuthConfig } from './auth.js';
 
 export type MauticConfig = MauticAuthConfig;
 
@@ -20,7 +20,6 @@ async function authedRequest(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<unknown> {
-  const token = await getAccessToken(cfg);
   const url = `${cfg.baseUrl.replace(/\/$/, '')}${path}`;
   let res: Response;
   try {
@@ -28,7 +27,7 @@ async function authedRequest(
       method: init.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+        Authorization: basicAuthHeader(cfg),
       },
       body: init.body ? JSON.stringify(init.body) : undefined,
     });

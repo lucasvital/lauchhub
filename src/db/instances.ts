@@ -6,8 +6,8 @@ export interface MauticInstanceRow {
   id: string;
   name: string;
   url: string;
-  client_id: string;
-  client_secret: string;
+  username: string;
+  password: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -15,11 +15,11 @@ export interface MauticInstanceRow {
 export interface MauticInstanceInput {
   name: string;
   url: string;
-  client_id: string;
-  client_secret: string;
+  username: string;
+  password: string;
 }
 
-const MAUTIC_COLS = `id, name, url, client_id, client_secret, created_at, updated_at`;
+const MAUTIC_COLS = `id, name, url, username, password, created_at, updated_at`;
 
 export const mautic = {
   async list(): Promise<MauticInstanceRow[]> {
@@ -37,10 +37,10 @@ export const mautic = {
   },
   async create(input: MauticInstanceInput): Promise<MauticInstanceRow> {
     const r = await query<MauticInstanceRow>(
-      `INSERT INTO mautic_instances (name, url, client_id, client_secret)
+      `INSERT INTO mautic_instances (name, url, username, password)
        VALUES ($1, $2, $3, $4)
        RETURNING ${MAUTIC_COLS}`,
-      [input.name, input.url, input.client_id, input.client_secret],
+      [input.name, input.url, input.username, input.password],
     );
     const row = r.rows[0];
     if (!row) throw new Error('Insert returned no row');
@@ -49,7 +49,7 @@ export const mautic = {
   async update(id: string, patch: Partial<MauticInstanceInput>): Promise<MauticInstanceRow | null> {
     const fields: string[] = [];
     const params: unknown[] = [];
-    for (const k of ['name', 'url', 'client_id', 'client_secret'] as const) {
+    for (const k of ['name', 'url', 'username', 'password'] as const) {
       if (patch[k] !== undefined) {
         params.push(patch[k]);
         fields.push(`${k} = $${params.length}`);

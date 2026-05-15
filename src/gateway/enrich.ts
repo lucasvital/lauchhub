@@ -20,11 +20,11 @@ async function resolveChatwootCreds(
 
 async function resolveMauticCreds(
   campaign: CampaignRow,
-): Promise<{ url: string | null; client_id: string | null; client_secret: string | null }> {
-  if (!campaign.mautic_instance_id) return { url: null, client_id: null, client_secret: null };
+): Promise<{ url: string | null; username: string | null; password: string | null }> {
+  if (!campaign.mautic_instance_id) return { url: null, username: null, password: null };
   const inst = await instances.mautic.findById(campaign.mautic_instance_id);
-  if (!inst) return { url: null, client_id: null, client_secret: null };
-  return { url: inst.url, client_id: inst.client_id, client_secret: inst.client_secret };
+  if (!inst) return { url: null, username: null, password: null };
+  return { url: inst.url, username: inst.username, password: inst.password };
 }
 
 async function resolveMetaCreds(
@@ -58,8 +58,8 @@ async function sliceConfig(
       const creds = await resolveMauticCreds(campaign);
       return {
         mautic_url: creds.url,
-        mautic_client_id: creds.client_id,
-        mautic_client_secret: creds.client_secret,
+        mautic_username: creds.username,
+        mautic_password: creds.password,
         mautic_segment_id: campaign.mautic_segment_id,
         mautic_tags: campaign.mautic_tags[event] ?? [],
       };

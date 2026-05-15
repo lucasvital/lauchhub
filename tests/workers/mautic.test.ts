@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { processMauticJob } from '../../src/workers/mautic.worker.js';
 import { FatalError } from '../../src/integrations/_shared/errors.js';
-import { __resetTokenCache, getAccessToken } from '../../src/integrations/mautic/auth.js';
+import { basicAuthHeader } from '../../src/integrations/mautic/auth.js';
 import type { WebhookJob } from '../../src/types/job.js';
 
-const cfg = { baseUrl: 'https://mautic.test', clientId: 'cid', clientSecret: 'secret' };
+const cfg = { baseUrl: 'https://mautic.test', username: 'admin', password: 'secret' };
 
 const job: WebhookJob = {
   correlation_id: 'c1',
@@ -22,7 +22,13 @@ const job: WebhookJob = {
     product_id: null,
     product_name: null,
   },
-  config: { mautic_url: 'https://mautic.test', mautic_client_id: 'cid', mautic_client_secret: 'secret', mautic_segment_id: 38, mautic_tags: ['comprador'] },
+  config: {
+    mautic_url: 'https://mautic.test',
+    mautic_username: 'admin',
+    mautic_password: 'secret',
+    mautic_segment_id: 38,
+    mautic_tags: ['comprador'],
+  },
   received_at: '2026-05-14T18:00:00Z',
 };
 
@@ -82,26 +88,29 @@ describe('processMauticJob', () => {
     const ghost = { ...job, contact: { ...job.contact, email: null } };
     await expect(processMauticJob(ghost, adapter)).rejects.toBeInstanceOf(FatalError);
   });
+
+  it('throws FatalError when credentials missing on job', async () => {
+    const adapter = {
+      findContactByEmail: vi.fn(),
+      createContact: vi.fn(),
+      patchContact: vi.fn(),
+      addToSegment: vi.fn(),
+    };
+    const noCreds = { ...job, config: { ...job.config, mautic_password: null } };
+    await expect(processMauticJob(noCreds, adapter)).rejects.toBeInstanceOf(FatalError);
+  });
 });
 
-describe('Mautic OAuth getAccessToken', () => {
-  beforeEach(() => __resetTokenCache());
-
-  it('exchanges client_credentials for access_token and caches', async () => {
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify({ access_token: 'tok-1', expires_in: 3600 }), { status: 200 }),
-    );
-    const t1 = await getAccessToken(cfg, fetcher as unknown as typeof fetch);
-    const t2 = await getAccessToken(cfg, fetcher as unknown as typeof fetch);
-    expect(t1).toBe('tok-1');
-    expect(t2).toBe('tok-1');
-    expect(fetcher).toHaveBeenCalledTimes(1);
+describe('basicAuthHeader', () => {
+  it('encodes user:pass as base64 with Basic prefix', () => {
+    const h = basicAuthHeader({ username: 'admin', password: 'secret' });
+    expect(h).toBe(`Basic ${Buffer.from('admin:secret', 'utf8').toString('base64')}`);
   });
 
-  it('throws FatalError on 401 (bad credentials)', async () => {
-    const fetcher = vi.fn(async () => new Response('unauthorized', { status: 401 }));
-    await expect(getAccessToken(cfg, fetcher as unknown as typeof fetch)).rejects.toBeInstanceOf(
-      FatalError,
-    );
+  it('handles UTF-8 chars in password', () => {
+    const h = basicAuthHeader({ username: 'user', password: 'sénhã' });
+    expect(h.startsWith('Basic ')).toBe(true);
+    const decoded = Buffer.from(h.slice(6), 'base64').toString('utf8');
+    expect(decoded).toBe('user:sénhã');
   });
 });
