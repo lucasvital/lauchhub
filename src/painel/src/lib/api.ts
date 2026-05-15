@@ -45,15 +45,19 @@ export const auth = {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = auth.getToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...((init.headers as Record<string, string>) ?? {}),
   };
+  // Only set Content-Type when we actually have a body — Fastify rejects
+  // empty bodies sent with `Content-Type: application/json`.
+  if (init.body !== undefined && init.body !== null && init.body !== '') {
+    headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
+  }
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'include',
-    headers,
     ...init,
+    headers,
   });
 
   if (res.status === 401) {
