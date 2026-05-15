@@ -36,8 +36,16 @@ const baseCampaign = {
   sheets_id: 'sheet-id',
   chatwoot_inbox_id: 14,
   chatwoot_tags: { compra_aprovada: ['aluno'] },
-  mautic_segment_id: 38,
-  mautic_tags: { compra_aprovada: ['comprador'] },
+  mautic_event_config: {
+    compra_aprovada: {
+      segments_add: [38],
+      segments_remove: [],
+      tags_add: ['comprador'],
+      tags_remove: [],
+      custom_fields: {},
+      skip_if_has_tag: [],
+    },
+  },
   meta_templates: { compra_aprovada: 'boas_vindas' },
   enabled_workers: { compra_aprovada: ['sheets', 'chatwoot', 'mautic', 'meta'] },
   active: true,

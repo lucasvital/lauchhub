@@ -99,6 +99,15 @@ export type EventId =
   | 'subscription_canceled'
   | 'subscription_renewed';
 
+export interface MauticEventConfig {
+  segments_add: number[];
+  segments_remove: number[];
+  tags_add: string[];
+  tags_remove: string[];
+  custom_fields: Record<string, string>;
+  skip_if_has_tag: string[];
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -112,8 +121,7 @@ export interface Campaign {
   meta_instance_id: string | null;
   chatwoot_inbox_id: number | null;
   chatwoot_tags: Record<string, string[]>;
-  mautic_segment_id: number | null;
-  mautic_tags: Record<string, string[]>;
+  mautic_event_config: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates: Record<string, string>;
   enabled_workers: Record<string, WorkerId[]>;
   active: boolean;

@@ -1,16 +1,28 @@
-import { useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   api,
   type Campaign,
   type InstanceSummary,
+  type MauticEventConfig,
   EVENTS,
   WORKERS,
   type EventId,
   type WorkerId,
 } from '../lib/api';
-import { Card, Badge, Button, Callout, WorkerChip } from '../components/ui';
+import { Badge, Card, Button, Callout, WorkerChip } from '../components/ui';
+
+function emptyMauticEventConfig(): MauticEventConfig {
+  return {
+    segments_add: [],
+    segments_remove: [],
+    tags_add: [],
+    tags_remove: [],
+    custom_fields: {},
+    skip_if_has_tag: [],
+  };
+}
 
 export function CampaignDetailPage() {
   const { id = '' } = useParams();
@@ -188,21 +200,6 @@ export function CampaignDetailPage() {
               placeholder="14"
             />
           </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
-              Mautic segment ID
-            </span>
-            <input
-              type="number"
-              defaultValue={c.mautic_segment_id ?? ''}
-              onBlur={(e) => {
-                const v = e.target.value ? Number(e.target.value) : null;
-                if (v !== c.mautic_segment_id)
-                  patchCampaign.mutate({ mautic_segment_id: v });
-              }}
-              placeholder="38"
-            />
-          </label>
           <label className="block sm:col-span-2">
             <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
               Google Sheets — Spreadsheet ID
@@ -287,6 +284,12 @@ export function CampaignDetailPage() {
         })}
       </Card>
 
+      <MauticEventEditor
+        config={c.mautic_event_config}
+        onSave={(next) => patchCampaign.mutate({ mautic_event_config: next })}
+        saving={patchCampaign.isPending}
+      />
+
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card accent="cyan">
           <h3>// Chatwoot</h3>
@@ -310,21 +313,19 @@ export function CampaignDetailPage() {
           </div>
         </Card>
         <Card accent="purple">
-          <h3>// Mautic</h3>
+          <h3>// Mautic — resumo</h3>
           <div className="mt-3 space-y-2 text-[11px]">
-            <div>
-              <span className="text-muted">Segment ID:</span>{' '}
-              <span className="text-text">{c.mautic_segment_id ?? '—'}</span>
-            </div>
-            {Object.entries(c.mautic_tags ?? {}).map(([ev, tags]) => (
+            {Object.entries(c.mautic_event_config ?? {}).length === 0 && (
+              <div className="text-muted-2">— nenhum evento configurado</div>
+            )}
+            {Object.entries(c.mautic_event_config ?? {}).map(([ev, cfg]) => (
               <div key={ev}>
                 <code className="text-accent-2">{ev}</code>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {(tags ?? []).map((t) => (
-                    <Badge key={t} color="purple">
-                      {t}
-                    </Badge>
-                  ))}
+                <div className="mt-1 text-[10px] text-muted">
+                  {(cfg?.segments_add?.length ?? 0) > 0 && <>seg+ [{cfg!.segments_add.join(', ')}] </>}
+                  {(cfg?.segments_remove?.length ?? 0) > 0 && <>seg- [{cfg!.segments_remove.join(', ')}] </>}
+                  {(cfg?.tags_add?.length ?? 0) > 0 && <>tag+ {cfg!.tags_add.length} </>}
+                  {(cfg?.tags_remove?.length ?? 0) > 0 && <>tag- {cfg!.tags_remove.length} </>}
                 </div>
               </div>
             ))}
@@ -385,5 +386,333 @@ function InstanceSelect({
         ))}
       </select>
     </label>
+  );
+}
+
+// ─── Mautic Event Editor ─────────────────────────────────────────────────────
+
+function MauticEventEditor({
+  config,
+  onSave,
+  saving,
+}: {
+  config: Partial<Record<EventId, MauticEventConfig>>;
+  onSave: (next: Partial<Record<EventId, MauticEventConfig>>) => void;
+  saving: boolean;
+}) {
+  const [selectedEvent, setSelectedEvent] = useState<EventId>(EVENTS[0].id);
+  const initial = useMemo(
+    () => config[selectedEvent] ?? emptyMauticEventConfig(),
+    [config, selectedEvent],
+  );
+  const [draft, setDraft] = useState<MauticEventConfig>(initial);
+  const [dirty, setDirty] = useState(false);
+
+  // Reset draft when switching event or when external config changes (after save)
+  const key = `${selectedEvent}:${JSON.stringify(initial)}`;
+  const [lastKey, setLastKey] = useState(key);
+  if (key !== lastKey) {
+    setDraft(initial);
+    setDirty(false);
+    setLastKey(key);
+  }
+
+  function update<K extends keyof MauticEventConfig>(field: K, value: MauticEventConfig[K]) {
+    setDraft((d) => ({ ...d, [field]: value }));
+    setDirty(true);
+  }
+
+  function save() {
+    onSave({ ...config, [selectedEvent]: draft });
+  }
+
+  return (
+    <Card accent="purple" className="mt-6">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3>// Mautic — config por evento</h3>
+          <p className="mt-1.5 text-[11px] text-muted">
+            Define o que fazer no Mautic quando esse evento chega. UTMs são enviados automaticamente
+            (utmsource, utmmedium, utmcampaign, utmcontent, utmterm).
+          </p>
+        </div>
+        <label className="block min-w-[220px]">
+          <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            Evento
+          </span>
+          <select
+            value={selectedEvent}
+            onChange={(e) => setSelectedEvent(e.target.value as EventId)}
+          >
+            {EVENTS.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="space-y-4">
+        <NumberChipList
+          label="Segmentos — adicionar a"
+          hint="IDs dos segmentos onde o contato vai ser inserido"
+          values={draft.segments_add}
+          onChange={(v) => update('segments_add', v)}
+          placeholder="ex: 22"
+        />
+        <NumberChipList
+          label="Segmentos — remover de"
+          hint="IDs dos segmentos onde o contato vai sair (limpar estados antigos)"
+          values={draft.segments_remove}
+          onChange={(v) => update('segments_remove', v)}
+          placeholder="ex: 8"
+        />
+        <StringChipList
+          label="Tags — adicionar"
+          hint="Templates {{contact.email}} / {{order.product_name}} são suportados"
+          values={draft.tags_add}
+          onChange={(v) => update('tags_add', v)}
+          placeholder="ex: [campanha] ALUNO"
+        />
+        <StringChipList
+          label="Tags — remover"
+          hint="Mautic usa prefixo -tag pra remover; nós formatamos automaticamente"
+          values={draft.tags_remove}
+          onChange={(v) => update('tags_remove', v)}
+          placeholder="ex: [campanha] ABANDONO"
+        />
+        <KeyValueEditor
+          label="Custom fields"
+          hint="Valores suportam templates: {{order.product_name}}, {{utm.utm_source}}, etc."
+          values={draft.custom_fields}
+          onChange={(v) => update('custom_fields', v)}
+        />
+        <StringChipList
+          label="Skip se contato já tem tag"
+          hint="Se o contato já tem qualquer tag dessas, o evento é ignorado (ex: skip abandono se já é comprador)"
+          values={draft.skip_if_has_tag}
+          onChange={(v) => update('skip_if_has_tag', v)}
+          placeholder="ex: comprador"
+        />
+      </div>
+
+      <div className="mt-5 flex items-center justify-end gap-3">
+        {dirty && <span className="text-[11px] text-accent-4">alterações não salvas</span>}
+        <Button disabled={!dirty || saving} onClick={save}>
+          {saving ? 'Salvando...' : 'Salvar evento'}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function NumberChipList({
+  label,
+  hint,
+  values,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  hint?: string;
+  values: number[];
+  onChange: (v: number[]) => void;
+  placeholder?: string;
+}) {
+  const [input, setInput] = useState('');
+  function add(e: FormEvent) {
+    e.preventDefault();
+    const n = Number(input.trim());
+    if (!Number.isFinite(n) || n <= 0) return;
+    if (values.includes(n)) {
+      setInput('');
+      return;
+    }
+    onChange([...values, n]);
+    setInput('');
+  }
+  return (
+    <div>
+      <ChipListHeader label={label} hint={hint} />
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {values.map((v) => (
+          <Chip key={v} onRemove={() => onChange(values.filter((x) => x !== v))}>
+            {v}
+          </Chip>
+        ))}
+        <form onSubmit={add} className="flex items-center gap-1.5">
+          <input
+            type="number"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={placeholder}
+            className="!w-24 !py-1.5 !px-2.5 !text-[12px]"
+          />
+          <Button type="submit" variant="ghost" size="sm">
+            +
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function StringChipList({
+  label,
+  hint,
+  values,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  hint?: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+}) {
+  const [input, setInput] = useState('');
+  function add(e: FormEvent) {
+    e.preventDefault();
+    const v = input.trim();
+    if (!v || values.includes(v)) {
+      setInput('');
+      return;
+    }
+    onChange([...values, v]);
+    setInput('');
+  }
+  return (
+    <div>
+      <ChipListHeader label={label} hint={hint} />
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {values.map((v) => (
+          <Chip key={v} onRemove={() => onChange(values.filter((x) => x !== v))}>
+            {v}
+          </Chip>
+        ))}
+        <form onSubmit={add} className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={placeholder}
+            className="!py-1.5 !px-2.5 !text-[12px] w-56"
+          />
+          <Button type="submit" variant="ghost" size="sm">
+            +
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function KeyValueEditor({
+  label,
+  hint,
+  values,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  values: Record<string, string>;
+  onChange: (v: Record<string, string>) => void;
+}) {
+  const [k, setK] = useState('');
+  const [v, setV] = useState('');
+  const entries = Object.entries(values);
+
+  function add(e: FormEvent) {
+    e.preventDefault();
+    const key = k.trim();
+    if (!key) return;
+    onChange({ ...values, [key]: v });
+    setK('');
+    setV('');
+  }
+  function remove(key: string) {
+    const next = { ...values };
+    delete next[key];
+    onChange(next);
+  }
+
+  return (
+    <div>
+      <ChipListHeader label={label} hint={hint} />
+      <div className="mt-1.5 space-y-1.5">
+        {entries.map(([key, val]) => (
+          <div
+            key={key}
+            className="flex items-center gap-2 rounded-sm border border-border bg-dim px-2.5 py-1.5"
+          >
+            <code className="text-[11px] text-accent-2">{key}</code>
+            <span className="text-muted-2">=</span>
+            <code className="flex-1 text-[11px] text-text">{val}</code>
+            <button
+              type="button"
+              onClick={() => remove(key)}
+              className="text-[11px] text-muted hover:text-accent-5"
+              aria-label={`remover ${key}`}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <form onSubmit={add} className="flex flex-wrap items-center gap-1.5">
+          <input
+            type="text"
+            value={k}
+            onChange={(e) => setK(e.target.value)}
+            placeholder="campo (ex: points)"
+            className="!py-1.5 !px-2.5 !text-[12px] w-40"
+          />
+          <span className="text-muted-2">=</span>
+          <input
+            type="text"
+            value={v}
+            onChange={(e) => setV(e.target.value)}
+            placeholder="valor (ex: 3 ou {{order.product_name}})"
+            className="!py-1.5 !px-2.5 !text-[12px] flex-1 min-w-[200px]"
+          />
+          <Button type="submit" variant="ghost" size="sm">
+            +
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ChipListHeader({ label, hint }: { label: string; hint?: string }) {
+  return (
+    <div>
+      <span className="block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+        {label}
+      </span>
+      {hint && <span className="block text-[10px] text-muted-2">{hint}</span>}
+    </div>
+  );
+}
+
+function Chip({
+  children,
+  onRemove,
+}: {
+  children: React.ReactNode;
+  onRemove: () => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 py-1 text-[11px] text-accent">
+      {children}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="text-accent/60 hover:text-accent-5"
+        aria-label="remover"
+      >
+        ✕
+      </button>
+    </span>
   );
 }

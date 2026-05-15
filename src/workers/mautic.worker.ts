@@ -6,18 +6,44 @@ import {
   createContact,
   findContactByEmail,
   patchContact,
+  removeFromSegment,
+  tagsOf,
   type MauticConfig,
 } from '../integrations/mautic/client.js';
 import { logger } from '../shared/logger.js';
-import type { WebhookJob } from '../types/job.js';
+import { render, renderRecord } from '../shared/template.js';
+import type { MauticEventConfig, UtmInfo, WebhookJob } from '../types/job.js';
 
 const log = logger.child({ worker: 'mautic' });
+
+/**
+ * Hardcoded mapping: Kiwify TrackingParameters → Mautic custom field aliases.
+ * These are always sent when the UTM is present in the webhook payload.
+ * NOT user-configurable — every campaign uses the same Mautic UTM aliases.
+ */
+const UTM_FIELD_MAP: Record<keyof UtmInfo, string> = {
+  utm_source: 'utmsource',
+  utm_medium: 'utmmedium',
+  utm_campaign: 'utmcampaign',
+  utm_content: 'utmcontent',
+  utm_term: 'utmterm',
+};
+
+function utmCustomFields(utm: UtmInfo): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, alias] of Object.entries(UTM_FIELD_MAP) as [keyof UtmInfo, string][]) {
+    const v = utm[k];
+    if (v) out[alias] = v;
+  }
+  return out;
+}
 
 export interface MauticAdapter {
   findContactByEmail: typeof findContactByEmail;
   createContact: typeof createContact;
   patchContact: typeof patchContact;
   addToSegment: typeof addToSegment;
+  removeFromSegment: typeof removeFromSegment;
 }
 
 const defaultAdapter: MauticAdapter = {
@@ -25,17 +51,29 @@ const defaultAdapter: MauticAdapter = {
   createContact,
   patchContact,
   addToSegment,
+  removeFromSegment,
 };
 
 function resolveConfig(job: WebhookJob): MauticConfig {
   const { mautic_url, mautic_username, mautic_password } = job.config;
   if (!mautic_url || !mautic_username || !mautic_password) {
     throw new FatalError(
-      'Mautic instance not configured for this campaign (and no global fallback)',
+      'Mautic instance not configured for this campaign',
       'no_credentials',
     );
   }
   return { baseUrl: mautic_url, username: mautic_username, password: mautic_password };
+}
+
+function emptyConfig(): MauticEventConfig {
+  return {
+    segments_add: [],
+    segments_remove: [],
+    tags_add: [],
+    tags_remove: [],
+    custom_fields: {},
+    skip_if_has_tag: [],
+  };
 }
 
 export async function processMauticJob(
@@ -47,8 +85,18 @@ export async function processMauticJob(
     campaign_id: job.campaign_id,
     event: job.event,
   });
+  const evCfg = { ...emptyConfig(), ...(job.config.mautic_event ?? {}) };
   jobLog.info(
-    { email: job.contact.email, url: job.config.mautic_url, segment_id: job.config.mautic_segment_id, tags_count: (job.config.mautic_tags ?? []).length },
+    {
+      email: job.contact.email,
+      url: job.config.mautic_url,
+      segments_add: evCfg.segments_add,
+      segments_remove: evCfg.segments_remove,
+      tags_add_count: evCfg.tags_add.length,
+      tags_remove_count: evCfg.tags_remove.length,
+      custom_field_keys: Object.keys(evCfg.custom_fields),
+      skip_check_count: evCfg.skip_if_has_tag.length,
+    },
     'mautic_job_start',
   );
 
@@ -58,35 +106,80 @@ export async function processMauticJob(
     throw new FatalError('Mautic requires email; webhook had none', 'no_email');
   }
 
-  const tags = job.config.mautic_tags ?? [];
-  const segmentId = job.config.mautic_segment_id;
+  // Render template strings against this job's context.
+  const ctx = { contact: job.contact, order: job.order, utm: job.utm };
+  const tagsAdd = evCfg.tags_add.map((t) => render(t, ctx)).filter(Boolean);
+  const tagsRemove = evCfg.tags_remove.map((t) => render(t, ctx)).filter(Boolean);
+  const customFields = {
+    ...renderRecord(evCfg.custom_fields, ctx),
+    ...utmCustomFields(job.utm),
+  };
+  const skipIf = new Set(evCfg.skip_if_has_tag.map((t) => render(t, ctx)).filter(Boolean));
+
+  // Step 1: lookup contact
+  const existing = await adapter.findContactByEmail(cfg, job.contact.email);
+
+  // Step 2: skip if existing has any "skip_if_has_tag"
+  if (existing && skipIf.size > 0) {
+    const hasSkipTag = tagsOf(existing).some((t) => skipIf.has(t));
+    if (hasSkipTag) {
+      jobLog.info(
+        { contact_id: existing.id, skip_if_has_tag: [...skipIf] },
+        'mautic_job_skipped',
+      );
+      return;
+    }
+  }
+
   const phone = normalizePhone(job.contact.phone);
   const [firstname, ...rest] = (job.contact.name ?? '').split(/\s+/).filter(Boolean);
+  const firstName = job.contact.first_name ?? firstname;
+  const lastName = rest.join(' ') || undefined;
 
-  let action: 'found' | 'created' | 'patched';
-  let contact = await adapter.findContactByEmail(cfg, job.contact.email);
-  if (!contact) {
-    contact = await adapter.createContact(cfg, {
+  // Step 3: create or patch (combined tags add+remove via Mautic `-tag` syntax)
+  const combinedTags = [...tagsAdd, ...tagsRemove.map((t) => `-${t}`)];
+
+  let contactId: number;
+  let action: 'created' | 'patched';
+  if (!existing) {
+    const created = await adapter.createContact(cfg, {
       email: job.contact.email,
-      firstname,
-      lastname: rest.join(' ') || undefined,
+      firstname: firstName,
+      lastname: lastName,
       mobile: phone ? `+${phone}` : null,
-      tags,
+      tags: tagsAdd, // create only takes positive tags
+      custom_fields: customFields,
     });
+    contactId = created.id;
     action = 'created';
-  } else if (tags.length > 0) {
-    await adapter.patchContact(cfg, contact.id, { tags });
-    action = 'patched';
+    // If there are tags to remove, do a follow-up patch (rare for new contacts but possible)
+    if (tagsRemove.length > 0) {
+      await adapter.patchContact(cfg, contactId, {
+        tags: tagsRemove.map((t) => `-${t}`),
+      });
+    }
   } else {
-    action = 'found';
+    contactId = existing.id;
+    action = 'patched';
+    await adapter.patchContact(cfg, contactId, {
+      tags: combinedTags.length > 0 ? combinedTags : undefined,
+      custom_fields: customFields,
+    });
   }
 
-  if (segmentId && contact.id) {
-    await adapter.addToSegment(cfg, segmentId, contact.id);
-  }
+  // Step 4: segment mutations (in parallel — independent operations)
+  await Promise.all([
+    ...evCfg.segments_add.map((segId) => adapter.addToSegment(cfg, segId, contactId)),
+    ...evCfg.segments_remove.map((segId) => adapter.removeFromSegment(cfg, segId, contactId)),
+  ]);
 
   jobLog.info(
-    { contact_id: contact.id, action, added_to_segment: Boolean(segmentId && contact.id) },
+    {
+      contact_id: contactId,
+      action,
+      segments_added: evCfg.segments_add,
+      segments_removed: evCfg.segments_remove,
+    },
     'mautic_job_done',
   );
 }

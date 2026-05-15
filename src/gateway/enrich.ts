@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { CampaignRow } from '../db/campaigns.js';
 import * as instances from '../db/instances.js';
 import type { EventId, JobConfigSlice, WebhookJob, WorkerId } from '../types/job.js';
-import { extractContact, extractOrder, type KiwifyPayload } from './event-detection.js';
+import { extractContact, extractOrder, extractUtm, type KiwifyPayload } from './event-detection.js';
 
 /**
  * Resolve credentials from the campaign's instance FK.
@@ -60,8 +60,7 @@ async function sliceConfig(
         mautic_url: creds.url,
         mautic_username: creds.username,
         mautic_password: creds.password,
-        mautic_segment_id: campaign.mautic_segment_id,
-        mautic_tags: campaign.mautic_tags[event] ?? [],
+        mautic_event: campaign.mautic_event_config[event] ?? null,
       };
     }
     case 'meta': {
@@ -91,6 +90,7 @@ export async function buildJobs(
   const correlation_id = randomUUID();
   const contact = extractContact(payload);
   const order = extractOrder(payload);
+  const utm = extractUtm(payload);
   const received_at = new Date().toISOString();
 
   const results: { worker: WorkerId; job: WebhookJob }[] = [];
@@ -105,6 +105,7 @@ export async function buildJobs(
         worker,
         contact,
         order,
+        utm,
         config: await sliceConfig(campaign, event, worker),
         received_at,
       },

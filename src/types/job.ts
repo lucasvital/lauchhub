@@ -35,6 +35,33 @@ export interface OrderInfo {
 }
 
 /**
+ * UTM tracking parameters from Kiwify webhook (TrackingParameters.*).
+ * All fields optional — only populated when present in the payload.
+ * Worker auto-maps these to Mautic custom fields (utmsource, utmmedium, etc.).
+ */
+export interface UtmInfo {
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
+}
+
+/**
+ * Per-event Mautic operations config (stored as campaigns.mautic_event_config).
+ * One entry per EventId. Strings inside support templating via {{path.to.value}}
+ * resolved against the job's contact/order/utm/campaign context.
+ */
+export interface MauticEventConfig {
+  segments_add: number[];
+  segments_remove: number[];
+  tags_add: string[];
+  tags_remove: string[];
+  custom_fields: Record<string, string>;
+  skip_if_has_tag: string[];
+}
+
+/**
  * Per-campaign config slice relevant to one worker invocation.
  * Each worker reads the subset it cares about.
  *
@@ -54,11 +81,11 @@ export interface JobConfigSlice {
   chatwoot_tags?: string[];
 
   // Mautic — per-campaign instance (URL/username/password resolved at enrich)
+  // plus the event-specific config block resolved from campaign.mautic_event_config[event]
   mautic_url?: string | null;
   mautic_username?: string | null;
   mautic_password?: string | null;
-  mautic_segment_id?: number | null;
-  mautic_tags?: string[];
+  mautic_event?: MauticEventConfig | null;
 
   // Meta — per-campaign instance (token/phone/api_version resolved at enrich)
   meta_token?: string | null;
@@ -75,6 +102,7 @@ export interface WebhookJob {
   worker: WorkerId;
   contact: ContactInfo;
   order: OrderInfo;
+  utm: UtmInfo;
   config: JobConfigSlice;
   received_at: string;
 }

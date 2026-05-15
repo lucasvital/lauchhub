@@ -1,5 +1,5 @@
 import { query } from './index.js';
-import type { EventId, WorkerId } from '../types/job.js';
+import type { EventId, MauticEventConfig, WorkerId } from '../types/job.js';
 
 export interface CampaignRow {
   id: string;
@@ -13,11 +13,10 @@ export interface CampaignRow {
   chatwoot_instance_id: string | null;
   mautic_instance_id: string | null;
   meta_instance_id: string | null;
-  // Per-campaign config (inbox, tags, segment, templates)
+  // Per-campaign config
   chatwoot_inbox_id: number | null;
   chatwoot_tags: Record<string, string[]>;
-  mautic_segment_id: number | null;
-  mautic_tags: Record<string, string[]>;
+  mautic_event_config: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates: Record<string, string>;
   enabled_workers: Record<string, WorkerId[]>;
   active: boolean;
@@ -37,8 +36,7 @@ export interface CampaignCreateInput {
   meta_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
   chatwoot_tags?: Record<string, string[]>;
-  mautic_segment_id?: number | null;
-  mautic_tags?: Record<string, string[]>;
+  mautic_event_config?: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates?: Record<string, string>;
   enabled_workers?: Record<string, WorkerId[]>;
   active?: boolean;
@@ -55,8 +53,7 @@ export interface CampaignUpdateInput {
   meta_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
   chatwoot_tags?: Record<string, string[]>;
-  mautic_segment_id?: number | null;
-  mautic_tags?: Record<string, string[]>;
+  mautic_event_config?: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates?: Record<string, string>;
   enabled_workers?: Record<string, WorkerId[]>;
 }
@@ -65,7 +62,7 @@ const ALL_COLS = `
   id, name, campaign_token, product_id, product_name, expert_name,
   sheets_id,
   chatwoot_instance_id, chatwoot_inbox_id, chatwoot_tags,
-  mautic_instance_id, mautic_segment_id, mautic_tags,
+  mautic_instance_id, mautic_event_config,
   meta_instance_id, meta_templates,
   enabled_workers, active, created_at, updated_at
 `;
@@ -124,15 +121,15 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
        (name, campaign_token, product_id, product_name, expert_name,
         sheets_id,
         chatwoot_instance_id, chatwoot_inbox_id, chatwoot_tags,
-        mautic_instance_id, mautic_segment_id, mautic_tags,
+        mautic_instance_id, mautic_event_config,
         meta_instance_id, meta_templates,
         enabled_workers, active)
      VALUES ($1,$2,$3,$4,$5,
              $6,
              $7,$8,$9::jsonb,
-             $10,$11,$12::jsonb,
-             $13,$14::jsonb,
-             $15::jsonb,$16)
+             $10,$11::jsonb,
+             $12,$13::jsonb,
+             $14::jsonb,$15)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -145,8 +142,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       input.chatwoot_inbox_id ?? null,
       JSON.stringify(input.chatwoot_tags ?? {}),
       input.mautic_instance_id ?? null,
-      input.mautic_segment_id ?? null,
-      JSON.stringify(input.mautic_tags ?? {}),
+      JSON.stringify(input.mautic_event_config ?? {}),
       input.meta_instance_id ?? null,
       JSON.stringify(input.meta_templates ?? {}),
       JSON.stringify(input.enabled_workers ?? {}),
@@ -176,8 +172,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.chatwoot_inbox_id !== undefined) setField('chatwoot_inbox_id', patch.chatwoot_inbox_id);
   if (patch.chatwoot_tags !== undefined) setField('chatwoot_tags', patch.chatwoot_tags, true);
   if (patch.mautic_instance_id !== undefined) setField('mautic_instance_id', patch.mautic_instance_id);
-  if (patch.mautic_segment_id !== undefined) setField('mautic_segment_id', patch.mautic_segment_id);
-  if (patch.mautic_tags !== undefined) setField('mautic_tags', patch.mautic_tags, true);
+  if (patch.mautic_event_config !== undefined) setField('mautic_event_config', patch.mautic_event_config, true);
   if (patch.meta_instance_id !== undefined) setField('meta_instance_id', patch.meta_instance_id);
   if (patch.meta_templates !== undefined) setField('meta_templates', patch.meta_templates, true);
   if (patch.enabled_workers !== undefined) setField('enabled_workers', patch.enabled_workers, true);

@@ -1,4 +1,4 @@
-import type { EventId } from '../types/job.js';
+import type { EventId, UtmInfo } from '../types/job.js';
 
 /**
  * Kiwify payload shape (relevant fields only — there are many we ignore).
@@ -11,7 +11,9 @@ export interface KiwifyPayload {
   order_status?: string;
   webhook_event_type?: string;
   payment_method?: string;
+  // Some Kiwify payloads send Products (array), others send Product (singular).
   Products?: Array<{ product_id?: string; name?: string; product_name?: string }>;
+  Product?: { product_id?: string; name?: string; product_name?: string };
   product_id?: string;
   product_name?: string;
   Customer?: {
@@ -25,6 +27,13 @@ export interface KiwifyPayload {
   Commissions?: { charge_amount?: string | number };
   charge_amount?: string | number;
   value?: number;
+  TrackingParameters?: {
+    utm_source?: string | null;
+    utm_medium?: string | null;
+    utm_campaign?: string | null;
+    utm_content?: string | null;
+    utm_term?: string | null;
+  };
 }
 
 /**
@@ -84,7 +93,8 @@ export function extractOrder(payload: KiwifyPayload): {
   product_id: string | null;
   product_name: string | null;
 } {
-  const firstProduct = payload.Products?.[0];
+  // Accept both plural (Products[0]) and singular (Product) shapes.
+  const product = payload.Products?.[0] ?? payload.Product;
   const id = payload.order_id ?? '';
   const rawValue = payload.value ?? payload.charge_amount ?? payload.Commissions?.charge_amount;
   const value =
@@ -100,7 +110,18 @@ export function extractOrder(payload: KiwifyPayload): {
     status: payload.order_status ?? '',
     payment_method: payload.payment_method ?? null,
     value: Number.isFinite(value as number) ? (value as number) : null,
-    product_id: firstProduct?.product_id ?? payload.product_id ?? null,
-    product_name: firstProduct?.name ?? firstProduct?.product_name ?? payload.product_name ?? null,
+    product_id: product?.product_id ?? payload.product_id ?? null,
+    product_name: product?.name ?? product?.product_name ?? payload.product_name ?? null,
+  };
+}
+
+export function extractUtm(payload: KiwifyPayload): UtmInfo {
+  const t = payload.TrackingParameters ?? {};
+  return {
+    utm_source: t.utm_source ?? null,
+    utm_medium: t.utm_medium ?? null,
+    utm_campaign: t.utm_campaign ?? null,
+    utm_content: t.utm_content ?? null,
+    utm_term: t.utm_term ?? null,
   };
 }

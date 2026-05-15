@@ -100,6 +100,11 @@ export interface CreateContactInput {
   lastname?: string;
   mobile?: string | null;
   tags?: string[];
+  /**
+   * Mautic custom fields — alias → value. Mautic API accepts these as
+   * top-level keys in the contact body (e.g. `{utmsource: "whatsapp"}`).
+   */
+  custom_fields?: Record<string, string>;
 }
 
 export async function createContact(
@@ -114,26 +119,50 @@ export async function createContact(
       lastname: input.lastname,
       mobile: input.mobile ?? undefined,
       tags: input.tags ?? [],
+      ...(input.custom_fields ?? {}),
     },
   })) as { contact?: MauticContact };
   if (!body.contact?.id) {
     log.error({ email: input.email, response_body: body }, 'mautic_create_no_contact');
     throw new FatalError('Mautic create returned no contact', 'bad_response');
   }
-  log.info({ email: input.email, contact_id: body.contact.id }, 'mautic_create_contact');
+  log.info(
+    { email: input.email, contact_id: body.contact.id, custom_field_keys: Object.keys(input.custom_fields ?? {}) },
+    'mautic_create_contact',
+  );
   return body.contact;
+}
+
+export interface PatchContactInput {
+  /**
+   * Tag list — Mautic syntax: prefix with `-` to remove (e.g. `["new-tag", "-old-tag"]`).
+   */
+  tags?: string[];
+  custom_fields?: Record<string, string>;
 }
 
 export async function patchContact(
   cfg: MauticConfig,
   contactId: number,
-  patch: { tags?: string[] },
+  patch: PatchContactInput,
 ): Promise<void> {
+  const body: Record<string, unknown> = {};
+  if (patch.tags !== undefined) body.tags = patch.tags;
+  if (patch.custom_fields) Object.assign(body, patch.custom_fields);
+
+  if (Object.keys(body).length === 0) {
+    log.info({ contact_id: contactId }, 'mautic_patch_skipped_empty');
+    return;
+  }
+
   await authedRequest(cfg, `/api/contacts/${contactId}/edit`, {
     method: 'PATCH',
-    body: patch,
+    body,
   });
-  log.info({ contact_id: contactId, tags: patch.tags }, 'mautic_patch_contact');
+  log.info(
+    { contact_id: contactId, tags: patch.tags, custom_field_keys: Object.keys(patch.custom_fields ?? {}) },
+    'mautic_patch_contact',
+  );
 }
 
 export async function addToSegment(
@@ -150,4 +179,28 @@ export async function addToSegment(
     { contact_id: contactId, segment_id: segmentId, success: body?.success ?? null },
     'mautic_add_to_segment',
   );
+}
+
+export async function removeFromSegment(
+  cfg: MauticConfig,
+  segmentId: number,
+  contactId: number,
+): Promise<void> {
+  const body = (await authedRequest(
+    cfg,
+    `/api/segments/${segmentId}/contact/${contactId}/remove`,
+    { method: 'POST' },
+  )) as { success?: boolean } | null;
+  log.info(
+    { contact_id: contactId, segment_id: segmentId, success: body?.success ?? null },
+    'mautic_remove_from_segment',
+  );
+}
+
+/**
+ * Helper: returns the tag names of a contact as a plain string[].
+ * Mautic stores tags as `[{tag: "name"}]`.
+ */
+export function tagsOf(contact: MauticContact): string[] {
+  return (contact.tags ?? []).map((t) => t.tag).filter(Boolean);
 }
