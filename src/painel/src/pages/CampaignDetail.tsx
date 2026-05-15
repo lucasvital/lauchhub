@@ -6,6 +6,9 @@ import {
   type Campaign,
   type InstanceSummary,
   type MauticEventConfig,
+  type MauticTagOption,
+  type MauticSegmentOption,
+  type MauticFieldOption,
   EVENTS,
   WORKERS,
   type EventId,
@@ -285,6 +288,7 @@ export function CampaignDetailPage() {
       </Card>
 
       <MauticEventEditor
+        mauticInstanceId={c.mautic_instance_id}
         config={c.mautic_event_config}
         onSave={(next) => patchCampaign.mutate({ mautic_event_config: next })}
         saving={patchCampaign.isPending}
@@ -392,10 +396,12 @@ function InstanceSelect({
 // ─── Mautic Event Editor ─────────────────────────────────────────────────────
 
 function MauticEventEditor({
+  mauticInstanceId,
   config,
   onSave,
   saving,
 }: {
+  mauticInstanceId: string | null;
   config: Partial<Record<EventId, MauticEventConfig>>;
   onSave: (next: Partial<Record<EventId, MauticEventConfig>>) => void;
   saving: boolean;
@@ -453,47 +459,52 @@ function MauticEventEditor({
         </label>
       </div>
 
+      {!mauticInstanceId && (
+        <Callout kind="warn">
+          Selecione uma instância Mautic acima pra carregar os tags e segmentos disponíveis.
+        </Callout>
+      )}
+
       <div className="space-y-4">
-        <NumberChipList
+        <MauticSegmentPicker
+          mauticInstanceId={mauticInstanceId}
           label="Segmentos — adicionar a"
-          hint="IDs dos segmentos onde o contato vai ser inserido"
+          hint="Onde o contato vai ser inserido quando esse evento chega"
           values={draft.segments_add}
           onChange={(v) => update('segments_add', v)}
-          placeholder="ex: 22"
         />
-        <NumberChipList
+        <MauticSegmentPicker
+          mauticInstanceId={mauticInstanceId}
           label="Segmentos — remover de"
-          hint="IDs dos segmentos onde o contato vai sair (limpar estados antigos)"
+          hint="Onde o contato vai sair (limpar estados antigos: abandono, ghost, etc.)"
           values={draft.segments_remove}
           onChange={(v) => update('segments_remove', v)}
-          placeholder="ex: 8"
         />
-        <StringChipList
+        <MauticTagPicker
+          mauticInstanceId={mauticInstanceId}
           label="Tags — adicionar"
-          hint="Templates {{contact.email}} / {{order.product_name}} são suportados"
+          hint="Tags já cadastradas no Mautic. Templates {{order.product_name}} suportados."
           values={draft.tags_add}
           onChange={(v) => update('tags_add', v)}
-          placeholder="ex: [campanha] ALUNO"
         />
-        <StringChipList
+        <MauticTagPicker
+          mauticInstanceId={mauticInstanceId}
           label="Tags — remover"
           hint="Mautic usa prefixo -tag pra remover; nós formatamos automaticamente"
           values={draft.tags_remove}
           onChange={(v) => update('tags_remove', v)}
-          placeholder="ex: [campanha] ABANDONO"
         />
-        <KeyValueEditor
-          label="Custom fields"
-          hint="Valores suportam templates: {{order.product_name}}, {{utm.utm_source}}, etc."
+        <MauticCustomFieldsEditor
+          mauticInstanceId={mauticInstanceId}
           values={draft.custom_fields}
           onChange={(v) => update('custom_fields', v)}
         />
-        <StringChipList
+        <MauticTagPicker
+          mauticInstanceId={mauticInstanceId}
           label="Skip se contato já tem tag"
-          hint="Se o contato já tem qualquer tag dessas, o evento é ignorado (ex: skip abandono se já é comprador)"
+          hint="Se o contato já tem qualquer dessas tags, o evento é ignorado (ex: skip abandono se já é comprador)"
           values={draft.skip_if_has_tag}
           onChange={(v) => update('skip_if_has_tag', v)}
-          placeholder="ex: comprador"
         />
       </div>
 
@@ -507,166 +518,273 @@ function MauticEventEditor({
   );
 }
 
-function NumberChipList({
+// ─── Mautic discovery pickers ────────────────────────────────────────────────
+
+function useMauticTags(mauticInstanceId: string | null) {
+  return useQuery({
+    queryKey: ['mautic-discovery', mauticInstanceId, 'tags'],
+    enabled: Boolean(mauticInstanceId),
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      api.get<{ ok: true; items: MauticTagOption[] }>(
+        `/api/instances/mautic/${mauticInstanceId}/tags`,
+      ),
+  });
+}
+
+function useMauticSegments(mauticInstanceId: string | null) {
+  return useQuery({
+    queryKey: ['mautic-discovery', mauticInstanceId, 'segments'],
+    enabled: Boolean(mauticInstanceId),
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      api.get<{ ok: true; items: MauticSegmentOption[] }>(
+        `/api/instances/mautic/${mauticInstanceId}/segments`,
+      ),
+  });
+}
+
+function useMauticContactFields(mauticInstanceId: string | null) {
+  return useQuery({
+    queryKey: ['mautic-discovery', mauticInstanceId, 'contact-fields'],
+    enabled: Boolean(mauticInstanceId),
+    staleTime: 30 * 60_000,
+    queryFn: () =>
+      api.get<{ ok: true; items: MauticFieldOption[] }>(
+        `/api/instances/mautic/${mauticInstanceId}/contact-fields`,
+      ),
+  });
+}
+
+function PickerStatus({
+  isLoading,
+  isError,
+  count,
+  onRefetch,
+}: {
+  isLoading: boolean;
+  isError: boolean;
+  count: number;
+  onRefetch: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onRefetch}
+      className="text-[10px] text-muted-2 hover:text-accent"
+      title="atualizar lista do Mautic"
+    >
+      {isLoading ? '↻ carregando…' : isError ? '✕ falhou — clique pra tentar' : `↻ ${count} itens`}
+    </button>
+  );
+}
+
+function MauticSegmentPicker({
+  mauticInstanceId,
   label,
   hint,
   values,
   onChange,
-  placeholder,
 }: {
+  mauticInstanceId: string | null;
   label: string;
   hint?: string;
   values: number[];
   onChange: (v: number[]) => void;
-  placeholder?: string;
 }) {
-  const [input, setInput] = useState('');
-  function add(e: FormEvent) {
-    e.preventDefault();
-    const n = Number(input.trim());
-    if (!Number.isFinite(n) || n <= 0) return;
-    if (values.includes(n)) {
-      setInput('');
-      return;
-    }
-    onChange([...values, n]);
-    setInput('');
+  const q = useMauticSegments(mauticInstanceId);
+  const segments = q.data?.items ?? [];
+  const byId = useMemo(() => new Map(segments.map((s) => [s.id, s.name])), [segments]);
+  const [selectValue, setSelectValue] = useState('');
+
+  const available = segments.filter((s) => !values.includes(s.id));
+
+  function add(id: number) {
+    if (Number.isFinite(id) && !values.includes(id)) onChange([...values, id]);
+    setSelectValue('');
   }
+
   return (
     <div>
-      <ChipListHeader label={label} hint={hint} />
+      <div className="flex items-center justify-between">
+        <ChipListHeader label={label} hint={hint} />
+        <PickerStatus
+          isLoading={q.isLoading}
+          isError={q.isError}
+          count={segments.length}
+          onRefetch={() => q.refetch()}
+        />
+      </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        {values.map((v) => (
-          <Chip key={v} onRemove={() => onChange(values.filter((x) => x !== v))}>
-            {v}
+        {values.map((id) => (
+          <Chip key={id} onRemove={() => onChange(values.filter((x) => x !== id))}>
+            {byId.get(id) ?? `#${id}`} <span className="text-accent/60">· {id}</span>
           </Chip>
         ))}
-        <form onSubmit={add} className="flex items-center gap-1.5">
-          <input
-            type="number"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={placeholder}
-            className="!w-24 !py-1.5 !px-2.5 !text-[12px]"
-          />
-          <Button type="submit" variant="ghost" size="sm">
-            +
-          </Button>
-        </form>
+        <select
+          value={selectValue}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            if (Number.isFinite(v) && v > 0) add(v);
+          }}
+          disabled={!mauticInstanceId || q.isLoading || available.length === 0}
+          className="!w-auto !py-1.5 !px-2.5 !text-[12px] min-w-[200px]"
+        >
+          <option value="">+ adicionar segmento…</option>
+          {available.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} (id: {s.id})
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );
 }
 
-function StringChipList({
+function MauticTagPicker({
+  mauticInstanceId,
   label,
   hint,
   values,
   onChange,
-  placeholder,
 }: {
+  mauticInstanceId: string | null;
   label: string;
   hint?: string;
   values: string[];
   onChange: (v: string[]) => void;
-  placeholder?: string;
 }) {
-  const [input, setInput] = useState('');
-  function add(e: FormEvent) {
-    e.preventDefault();
-    const v = input.trim();
-    if (!v || values.includes(v)) {
-      setInput('');
-      return;
-    }
+  const q = useMauticTags(mauticInstanceId);
+  const tags = q.data?.items ?? [];
+  const [selectValue, setSelectValue] = useState('');
+
+  const available = tags.map((t) => t.tag).filter((t) => !values.includes(t));
+
+  function add(tag: string) {
+    const v = tag.trim();
+    if (!v || values.includes(v)) return;
     onChange([...values, v]);
-    setInput('');
+    setSelectValue('');
   }
+
   return (
     <div>
-      <ChipListHeader label={label} hint={hint} />
+      <div className="flex items-center justify-between">
+        <ChipListHeader label={label} hint={hint} />
+        <PickerStatus
+          isLoading={q.isLoading}
+          isError={q.isError}
+          count={tags.length}
+          onRefetch={() => q.refetch()}
+        />
+      </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        {values.map((v) => (
-          <Chip key={v} onRemove={() => onChange(values.filter((x) => x !== v))}>
-            {v}
+        {values.map((t) => (
+          <Chip key={t} onRemove={() => onChange(values.filter((x) => x !== t))}>
+            {t}
           </Chip>
         ))}
-        <form onSubmit={add} className="flex items-center gap-1.5">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={placeholder}
-            className="!py-1.5 !px-2.5 !text-[12px] w-56"
-          />
-          <Button type="submit" variant="ghost" size="sm">
-            +
-          </Button>
-        </form>
+        <select
+          value={selectValue}
+          onChange={(e) => {
+            if (e.target.value) add(e.target.value);
+          }}
+          disabled={!mauticInstanceId || q.isLoading || available.length === 0}
+          className="!w-auto !py-1.5 !px-2.5 !text-[12px] min-w-[260px]"
+        >
+          <option value="">+ adicionar tag…</option>
+          {available.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );
 }
 
-function KeyValueEditor({
-  label,
-  hint,
+function MauticCustomFieldsEditor({
+  mauticInstanceId,
   values,
   onChange,
 }: {
-  label: string;
-  hint?: string;
+  mauticInstanceId: string | null;
   values: Record<string, string>;
   onChange: (v: Record<string, string>) => void;
 }) {
-  const [k, setK] = useState('');
+  const q = useMauticContactFields(mauticInstanceId);
+  const fields = q.data?.items ?? [];
+  const byAlias = useMemo(() => new Map(fields.map((f) => [f.alias, f.label])), [fields]);
+
+  const [selectedAlias, setSelectedAlias] = useState('');
   const [v, setV] = useState('');
   const entries = Object.entries(values);
+  const available = fields.filter((f) => !(f.alias in values));
 
   function add(e: FormEvent) {
     e.preventDefault();
-    const key = k.trim();
-    if (!key) return;
-    onChange({ ...values, [key]: v });
-    setK('');
+    if (!selectedAlias) return;
+    onChange({ ...values, [selectedAlias]: v });
+    setSelectedAlias('');
     setV('');
   }
-  function remove(key: string) {
+  function remove(alias: string) {
     const next = { ...values };
-    delete next[key];
+    delete next[alias];
     onChange(next);
   }
 
   return (
     <div>
-      <ChipListHeader label={label} hint={hint} />
+      <div className="flex items-center justify-between">
+        <ChipListHeader
+          label="Custom fields"
+          hint="Valores suportam templates: {{order.product_name}}, {{utm.utm_source}}, etc."
+        />
+        <PickerStatus
+          isLoading={q.isLoading}
+          isError={q.isError}
+          count={fields.length}
+          onRefetch={() => q.refetch()}
+        />
+      </div>
       <div className="mt-1.5 space-y-1.5">
-        {entries.map(([key, val]) => (
+        {entries.map(([alias, val]) => (
           <div
-            key={key}
+            key={alias}
             className="flex items-center gap-2 rounded-sm border border-border bg-dim px-2.5 py-1.5"
           >
-            <code className="text-[11px] text-accent-2">{key}</code>
+            <code className="text-[11px] text-accent-2" title={byAlias.get(alias) ?? alias}>
+              {alias}
+            </code>
             <span className="text-muted-2">=</span>
             <code className="flex-1 text-[11px] text-text">{val}</code>
             <button
               type="button"
-              onClick={() => remove(key)}
+              onClick={() => remove(alias)}
               className="text-[11px] text-muted hover:text-accent-5"
-              aria-label={`remover ${key}`}
+              aria-label={`remover ${alias}`}
             >
               ✕
             </button>
           </div>
         ))}
         <form onSubmit={add} className="flex flex-wrap items-center gap-1.5">
-          <input
-            type="text"
-            value={k}
-            onChange={(e) => setK(e.target.value)}
-            placeholder="campo (ex: points)"
-            className="!py-1.5 !px-2.5 !text-[12px] w-40"
-          />
+          <select
+            value={selectedAlias}
+            onChange={(e) => setSelectedAlias(e.target.value)}
+            disabled={!mauticInstanceId || q.isLoading || available.length === 0}
+            className="!w-auto !py-1.5 !px-2.5 !text-[12px] min-w-[200px]"
+          >
+            <option value="">campo Mautic…</option>
+            {available.map((f) => (
+              <option key={f.alias} value={f.alias}>
+                {f.label} ({f.alias})
+              </option>
+            ))}
+          </select>
           <span className="text-muted-2">=</span>
           <input
             type="text"
@@ -675,7 +793,7 @@ function KeyValueEditor({
             placeholder="valor (ex: 3 ou {{order.product_name}})"
             className="!py-1.5 !px-2.5 !text-[12px] flex-1 min-w-[200px]"
           />
-          <Button type="submit" variant="ghost" size="sm">
+          <Button type="submit" variant="ghost" size="sm" disabled={!selectedAlias}>
             +
           </Button>
         </form>

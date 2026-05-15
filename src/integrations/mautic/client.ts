@@ -204,3 +204,75 @@ export async function removeFromSegment(
 export function tagsOf(contact: MauticContact): string[] {
   return (contact.tags ?? []).map((t) => t.tag).filter(Boolean);
 }
+
+// ─── Discovery (for painel autocompletes) ────────────────────────────────────
+
+export interface MauticTag {
+  id: number;
+  tag: string;
+}
+
+export interface MauticSegment {
+  id: number;
+  name: string;
+  alias: string | null;
+}
+
+export interface MauticContactField {
+  id: number;
+  alias: string;
+  label: string;
+  type: string;
+}
+
+interface TagsResponse {
+  total?: string | number;
+  tags?: Record<string, { id: number; tag: string }>;
+}
+
+interface SegmentsResponse {
+  total?: string | number;
+  lists?: Record<string, { id: number; name: string; alias?: string }>;
+}
+
+interface FieldsResponse {
+  total?: string | number;
+  fields?: Record<string, { id: number; alias: string; label: string; type: string }>;
+}
+
+/**
+ * Mautic returns collections keyed by id (object), not arrays. We flatten to []
+ * and sort alphabetically for stable UI display.
+ */
+export async function listTags(cfg: MauticConfig): Promise<MauticTag[]> {
+  const body = (await authedRequest(cfg, `/api/tags?limit=1000`)) as TagsResponse;
+  const out = Object.values(body.tags ?? {}).map((t) => ({ id: t.id, tag: t.tag }));
+  out.sort((a, b) => a.tag.localeCompare(b.tag));
+  log.info({ count: out.length }, 'mautic_list_tags');
+  return out;
+}
+
+export async function listSegments(cfg: MauticConfig): Promise<MauticSegment[]> {
+  const body = (await authedRequest(cfg, `/api/segments?limit=1000`)) as SegmentsResponse;
+  const out = Object.values(body.lists ?? {}).map((s) => ({
+    id: s.id,
+    name: s.name,
+    alias: s.alias ?? null,
+  }));
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  log.info({ count: out.length }, 'mautic_list_segments');
+  return out;
+}
+
+export async function listContactFields(cfg: MauticConfig): Promise<MauticContactField[]> {
+  const body = (await authedRequest(cfg, `/api/fields/contact?limit=1000`)) as FieldsResponse;
+  const out = Object.values(body.fields ?? {}).map((f) => ({
+    id: f.id,
+    alias: f.alias,
+    label: f.label,
+    type: f.type,
+  }));
+  out.sort((a, b) => a.label.localeCompare(b.label));
+  log.info({ count: out.length }, 'mautic_list_contact_fields');
+  return out;
+}

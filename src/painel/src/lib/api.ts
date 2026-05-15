@@ -134,6 +134,24 @@ export interface InstanceSummary {
   name: string;
 }
 
+export interface MauticTagOption {
+  id: number;
+  tag: string;
+}
+
+export interface MauticSegmentOption {
+  id: number;
+  name: string;
+  alias: string | null;
+}
+
+export interface MauticFieldOption {
+  id: number;
+  alias: string;
+  label: string;
+  type: string;
+}
+
 export interface DashboardSummary {
   ok: true;
   byWorker: Record<WorkerId, { waiting: number; active: number; failed: number; completed: number; delayed: number }>;

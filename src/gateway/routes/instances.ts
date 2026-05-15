@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import * as instances from '../../db/instances.js';
+import {
+  listContactFields,
+  listSegments,
+  listTags,
+} from '../../integrations/mautic/client.js';
 
 interface PingResult {
   ok: boolean;
@@ -115,6 +120,58 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
       const inst = await instances.mautic.findById(req.params.id);
       if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
       return pingMautic(inst);
+    },
+  );
+
+  // Mautic discovery — proxied to Mautic API, used by the painel for
+  // autocomplete in the campaign event editor. Errors return { ok: false, error }
+  // so the UI can show a fallback message without breaking.
+  function mauticCfg(inst: instances.MauticInstanceRow) {
+    return { baseUrl: inst.url, username: inst.username, password: inst.password };
+  }
+
+  app.get<{ Params: { id: string } }>(
+    '/api/instances/mautic/:id/tags',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const inst = await instances.mautic.findById(req.params.id);
+      if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
+      try {
+        const items = await listTags(mauticCfg(inst));
+        return { ok: true, items };
+      } catch (err) {
+        return reply.code(502).send({ ok: false, error: 'mautic_unreachable', detail: String(err) });
+      }
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/api/instances/mautic/:id/segments',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const inst = await instances.mautic.findById(req.params.id);
+      if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
+      try {
+        const items = await listSegments(mauticCfg(inst));
+        return { ok: true, items };
+      } catch (err) {
+        return reply.code(502).send({ ok: false, error: 'mautic_unreachable', detail: String(err) });
+      }
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/api/instances/mautic/:id/contact-fields',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const inst = await instances.mautic.findById(req.params.id);
+      if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
+      try {
+        const items = await listContactFields(mauticCfg(inst));
+        return { ok: true, items };
+      } catch (err) {
+        return reply.code(502).send({ ok: false, error: 'mautic_unreachable', detail: String(err) });
+      }
     },
   );
 
