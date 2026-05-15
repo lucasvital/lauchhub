@@ -12,7 +12,8 @@ RUN npm ci
 # Copy source and build
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+RUN npm run build && \
+    find dist/db/migrations -name '*.map' -delete
 
 # ─── Stage 2: runtime ────────────────────────────────────────────────────────
 FROM node:20-alpine AS runtime
