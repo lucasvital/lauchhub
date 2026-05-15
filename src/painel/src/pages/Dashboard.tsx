@@ -31,7 +31,7 @@ export function DashboardPage() {
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card accent="cyan">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted">
             Jobs ativos
           </div>
           <div className="mt-1.5 font-display text-4xl font-extrabold tracking-tightest">
@@ -40,7 +40,7 @@ export function DashboardPage() {
           <div className="mt-1.5 text-[11px] text-muted">processando agora</div>
         </Card>
         <Card accent="purple">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted">
             Aguardando
           </div>
           <div className="mt-1.5 font-display text-4xl font-extrabold tracking-tightest">
@@ -49,7 +49,7 @@ export function DashboardPage() {
           <div className="mt-1.5 text-[11px] text-muted">na fila</div>
         </Card>
         <Card accent="green">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted">
             Concluídos
           </div>
           <div className="mt-1.5 font-display text-4xl font-extrabold tracking-tightest">
@@ -58,7 +58,7 @@ export function DashboardPage() {
           <div className="mt-1.5 text-[11px] text-muted">últimas 24h (retidos)</div>
         </Card>
         <Card accent={totalsFailed > 0 ? 'red' : 'green'}>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted">
             Falhas
           </div>
           <div className="mt-1.5 font-display text-4xl font-extrabold tracking-tightest">
@@ -72,29 +72,29 @@ export function DashboardPage() {
         <div className="mb-3 flex items-center justify-between">
           <h2>Por worker</h2>
           {summary.isFetching && (
-            <span className="text-[10px] uppercase tracking-[0.1em] text-muted">atualizando…</span>
+            <span className="text-[11px] uppercase tracking-[0.08em] text-muted">atualizando…</span>
           )}
         </div>
         <div className="overflow-x-auto rounded border border-border">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-dim border-b border-border">
-                <th className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                   Worker
                 </th>
-                <th className="px-4 py-2.5 text-right text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+                <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                   Active
                 </th>
-                <th className="px-4 py-2.5 text-right text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+                <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                   Waiting
                 </th>
-                <th className="px-4 py-2.5 text-right text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+                <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                   Delayed
                 </th>
-                <th className="px-4 py-2.5 text-right text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+                <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                   Completed
                 </th>
-                <th className="px-4 py-2.5 text-right text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+                <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                   Failed
                 </th>
               </tr>

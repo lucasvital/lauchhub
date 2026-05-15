@@ -50,7 +50,7 @@ export function Badge({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-sm px-2 py-[3px] text-[9px] font-semibold uppercase tracking-[0.12em] ${badgeBg[color]}`}
+      className={`inline-flex items-center gap-1 rounded-sm px-2 py-[3px] text-[11px] font-semibold uppercase tracking-[0.08em] ${badgeBg[color]}`}
     >
       {dot && <span className="h-1.5 w-1.5 rounded-full bg-current" />}
       {children}
@@ -117,7 +117,7 @@ export function SectionLabel({
   children: ReactNode;
 }) {
   return (
-    <div className="border-l-2 border-border pl-2 text-[9px] font-semibold uppercase tracking-[0.2em] text-muted mb-3">
+    <div className="border-l-2 border-border pl-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted mb-3">
       {number && <span className="text-accent mr-2">{number}</span>}
       {children}
     </div>
@@ -143,7 +143,7 @@ export function Button({
 }) {
   const base =
     'font-mono font-semibold uppercase tracking-[0.08em] rounded inline-flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-  const sizes = { sm: 'px-3 py-1 text-[10px]', md: 'px-4 py-2 text-[11px]' };
+  const sizes = { sm: 'px-3 py-1.5 text-[12px]', md: 'px-4 py-2 text-[13px]' };
   const variants = {
     primary: 'bg-accent text-white hover:bg-accent-hover',
     ghost: 'bg-transparent text-muted border border-border hover:text-text hover:border-border-2',

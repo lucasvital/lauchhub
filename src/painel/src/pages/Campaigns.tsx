@@ -52,7 +52,7 @@ export function CampaignsPage() {
           <button
             key={f}
             onClick={() => setStatusFilter(f)}
-            className={`rounded-sm border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors ${
+            className={`rounded-sm border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors ${
               statusFilter === f
                 ? 'border-accent bg-accent/15 text-accent'
                 : 'border-border text-muted hover:border-border-2 hover:text-text'
@@ -67,16 +67,16 @@ export function CampaignsPage() {
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-dim border-b border-border">
-              <th className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                 Status
               </th>
-              <th className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                 Token / Nome
               </th>
-              <th className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                 Produto
               </th>
-              <th className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                 Workers
               </th>
               <th className="w-12 px-4 py-2.5"></th>
@@ -211,13 +211,13 @@ function NewCampaignModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="space-y-4 px-6 py-5">
           <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Nome
             </span>
             <input value={name} onChange={(e) => setName(e.target.value)} required />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Token
             </span>
             <input
@@ -236,7 +236,7 @@ function NewCampaignModal({ onClose }: { onClose: () => void }) {
             )}
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Product ID Kiwify (opcional)
             </span>
             <input value={productId} onChange={(e) => setProductId(e.target.value)} placeholder="kw_prod_..." />

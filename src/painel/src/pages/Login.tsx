@@ -46,7 +46,7 @@ export function LoginPage() {
 
         <div className="space-y-3 rounded-md border border-border bg-surface p-6">
           <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Usuário
             </span>
             <input
@@ -59,7 +59,7 @@ export function LoginPage() {
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Senha
             </span>
             <input

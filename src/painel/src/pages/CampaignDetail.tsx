@@ -113,7 +113,7 @@ export function CampaignDetailPage() {
     <div>
       <div className="mb-8 flex flex-wrap items-end justify-between gap-6">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.1em]">
+          <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.08em]">
             <Link to="/campaigns" className="text-muted hover:text-text">
               ← campanhas
             </Link>
@@ -143,11 +143,11 @@ export function CampaignDetailPage() {
       <Card className="mb-6">
         <h3 className="mb-3">// Webhook URL</h3>
         <div className="flex items-center gap-2.5 overflow-x-auto rounded border border-dashed border-border-2 bg-dim px-3 py-2.5 font-mono text-[11px]">
-          <span className="text-[10px] uppercase tracking-[0.1em] text-muted">POST</span>
+          <span className="text-[11px] uppercase tracking-[0.08em] text-muted">POST</span>
           <code className="whitespace-nowrap text-accent-2">{apiUrl || webhookUrl}</code>
           <button
             onClick={copyWebhook}
-            className="ml-auto rounded-sm border border-border px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted transition-colors hover:border-accent hover:text-accent"
+            className="ml-auto rounded-sm border border-border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted transition-colors hover:border-accent hover:text-accent"
           >
             {copied ? '✓ copiado' : 'copiar'}
           </button>
@@ -158,7 +158,7 @@ export function CampaignDetailPage() {
         <h3 className="mb-4">// Integrações desta campanha</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Expert / produto
             </span>
             <input
@@ -189,7 +189,7 @@ export function CampaignDetailPage() {
             onChange={(v) => patchCampaign.mutate({ meta_instance_id: v })}
           />
           <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Chatwoot inbox ID
             </span>
             <input
@@ -204,7 +204,7 @@ export function CampaignDetailPage() {
             />
           </label>
           <label className="block sm:col-span-2">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Google Sheets — Spreadsheet ID
             </span>
             <input
@@ -233,13 +233,13 @@ export function CampaignDetailPage() {
           className="grid border-b border-border bg-dim"
           style={{ gridTemplateColumns: '220px repeat(4, 1fr)' }}
         >
-          <div className="px-3.5 py-2.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+          <div className="px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
             Evento
           </div>
           {WORKERS.map((w) => (
             <div
               key={w.id}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-muted"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted"
             >
               <WorkerChip workerId={w.id} glyph={w.glyph} />
               <span>{w.label}</span>
@@ -257,7 +257,7 @@ export function CampaignDetailPage() {
             >
               <div className="px-3.5 py-3">
                 <div className="text-xs font-medium text-text">{ev.label}</div>
-                <div className="text-[9px] uppercase tracking-[0.1em] text-muted-2">{ev.sub}</div>
+                <div className="text-[10px] uppercase tracking-[0.06em] text-muted-2">{ev.sub}</div>
               </div>
               {WORKERS.map((w) => {
                 const on = enabled.includes(w.id);
@@ -325,7 +325,7 @@ export function CampaignDetailPage() {
             {Object.entries(c.mautic_event_config ?? {}).map(([ev, cfg]) => (
               <div key={ev}>
                 <code className="text-accent-2">{ev}</code>
-                <div className="mt-1 text-[10px] text-muted">
+                <div className="mt-1 text-[11px] text-muted">
                   {(cfg?.segments_add?.length ?? 0) > 0 && <>seg+ [{cfg!.segments_add.join(', ')}] </>}
                   {(cfg?.segments_remove?.length ?? 0) > 0 && <>seg- [{cfg!.segments_remove.join(', ')}] </>}
                   {(cfg?.tags_add?.length ?? 0) > 0 && <>tag+ {cfg!.tags_add.length} </>}
@@ -375,7 +375,7 @@ function InstanceSelect({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
         {label}
       </span>
       <select
@@ -443,7 +443,7 @@ function MauticEventEditor({
           </p>
         </div>
         <label className="block min-w-[220px]">
-          <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
             Evento
           </span>
           <select
@@ -571,7 +571,7 @@ function PickerStatus({
     <button
       type="button"
       onClick={onRefetch}
-      className="text-[10px] text-muted-2 hover:text-accent"
+      className="text-[11px] text-muted-2 hover:text-accent"
       title="atualizar lista do Mautic"
     >
       {isLoading ? '↻ carregando…' : isError ? '✕ falhou — clique pra tentar' : `↻ ${count} itens`}
@@ -805,10 +805,10 @@ function MauticCustomFieldsEditor({
 function ChipListHeader({ label, hint }: { label: string; hint?: string }) {
   return (
     <div>
-      <span className="block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+      <span className="block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
         {label}
       </span>
-      {hint && <span className="block text-[10px] text-muted-2">{hint}</span>}
+      {hint && <span className="block text-[11px] text-muted-2">{hint}</span>}
     </div>
   );
 }

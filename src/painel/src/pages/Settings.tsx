@@ -107,7 +107,7 @@ export function SettingsPage() {
           </p>
           <div className="mt-4 space-y-3">
             <label className="block">
-              <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                 Service Account Email
               </span>
               <input
@@ -119,7 +119,7 @@ export function SettingsPage() {
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                 Service Account JSON
               </span>
               <div className="relative">
@@ -139,7 +139,7 @@ export function SettingsPage() {
                       setDraft((d) => ({ ...d, google_service_account_json: '' }));
                       setRevealed(true);
                     }}
-                    className="absolute right-2 top-2 rounded-sm border border-border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted hover:text-text"
+                    className="absolute right-2 top-2 rounded-sm border border-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted hover:text-text"
                   >
                     TROCAR
                   </button>

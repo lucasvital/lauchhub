@@ -100,7 +100,7 @@ export function LogsPage() {
           }`}
         >
           Dead Letter Queue
-          <span className="ml-2 rounded-[10px] bg-dim px-2 py-0.5 text-[9px]">{dlqItems.length}</span>
+          <span className="ml-2 rounded-[10px] bg-dim px-2 py-0.5 text-[11px]">{dlqItems.length}</span>
         </button>
         <button
           onClick={() => setTab('unmatched')}
@@ -111,7 +111,7 @@ export function LogsPage() {
           }`}
         >
           Eventos não-mapeados
-          <span className="ml-2 rounded-[10px] bg-dim px-2 py-0.5 text-[9px]">{unmatchedItems.length}</span>
+          <span className="ml-2 rounded-[10px] bg-dim px-2 py-0.5 text-[11px]">{unmatchedItems.length}</span>
         </button>
       </div>
 
@@ -154,7 +154,7 @@ export function LogsPage() {
                         </div>
                       </div>
                       <div className="flex flex-shrink-0 items-center gap-2">
-                        <span className="text-[10px] text-muted-2">{timeAgo(j.timestamp)}</span>
+                        <span className="text-[11px] text-muted-2">{timeAgo(j.timestamp)}</span>
                         <Button
                           size="sm"
                           onClick={() => retryOne.mutate({ worker: j.worker, id: j.id })}
@@ -196,13 +196,13 @@ export function LogsPage() {
                       <Badge color="amber">SEM CAMPANHA</Badge>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-muted-2">{timeAgo(u.created_at)}</span>
+                      <span className="text-[11px] text-muted-2">{timeAgo(u.created_at)}</span>
                       <Button size="sm" variant="danger" onClick={() => discard.mutate(u.id)}>
                         Descartar
                       </Button>
                     </div>
                   </div>
-                  <pre className="overflow-x-auto rounded border border-border bg-dim p-3 text-[10px] text-muted">
+                  <pre className="overflow-x-auto rounded border border-border bg-dim p-3 text-[11px] text-muted">
                     {JSON.stringify(u.payload, null, 2)}
                   </pre>
                 </Card>

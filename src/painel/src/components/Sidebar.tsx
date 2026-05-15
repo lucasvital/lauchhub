@@ -37,7 +37,7 @@ export function Sidebar({
       </div>
 
       <div className="mb-4 px-3.5">
-        <div className="px-2 pb-2 text-[9px] font-semibold uppercase tracking-[0.2em] text-muted-2">
+        <div className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
           Operação
         </div>
         {items.map((item) => {
@@ -46,7 +46,7 @@ export function Sidebar({
             <NavLink
               key={item.to}
               to={item.to}
-              className={`flex items-center gap-2.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-2.5 rounded px-2 py-2 text-[13px] font-medium transition-colors ${
                 active ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-border hover:text-text'
               }`}
             >
@@ -60,7 +60,7 @@ export function Sidebar({
         <span className="h-2 w-2 flex-shrink-0 rounded-full bg-accent-3 shadow-[0_0_0_3px_rgba(16,185,129,0.15)] animate-pulse" />
         <span className="flex-1">
           <span className="block font-semibold text-text">online</span>
-          <span className="block text-[9px] tracking-[0.08em] text-muted-2">launches.loyoladigital.com</span>
+          <span className="block text-[10px] tracking-[0.04em] text-muted-2">launches.loyoladigital.com</span>
         </span>
         <button
           onClick={onThemeToggle}

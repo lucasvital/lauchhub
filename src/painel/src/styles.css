@@ -4,22 +4,24 @@
 
 :root,
 :root[data-theme='dark'] {
-  --bg: #0a0a0f;
-  --surface: #111118;
-  --surface2: #16161f;
-  --border: #1e1e2e;
-  --border2: #2a2a3e;
-  --dim: #1a1a2e;
-  --text: #e2e8f0;
-  --muted: #64748b;
-  --muted2: #475569;
-  --accent: #7c3aed;
-  --accent-glow: rgba(124, 58, 237, 0.15);
-  --accent-hover: #6d28d9;
-  --accent2: #06b6d4;
-  --accent3: #10b981;
-  --accent4: #f59e0b;
-  --accent5: #ef4444;
+  /* Surfaces — slightly raised from previous "too dark" set for less eye strain */
+  --bg: #0d0e15;
+  --surface: #16171f;
+  --surface2: #1c1d28;
+  --border: #262734;
+  --border2: #353648;
+  --dim: #1e1f2c;
+  /* Text — all values meet WCAG AA (4.5:1) against --bg */
+  --text: #e8edf5;       /* primary — ratio ~16:1 */
+  --muted: #a3b1c6;      /* secondary — ratio ~9.5:1 (was 64748b @ ~4.7:1) */
+  --muted2: #7b8aa3;     /* tertiary — ratio ~5.8:1 (was 475569 @ ~3.3:1 FAIL) */
+  --accent: #8b5cf6;     /* slightly brighter than before for accessibility */
+  --accent-glow: rgba(139, 92, 246, 0.18);
+  --accent-hover: #7c3aed;
+  --accent2: #22d3ee;    /* cyan-400 instead of cyan-500 */
+  --accent3: #34d399;    /* emerald-400 instead of emerald-500 */
+  --accent4: #fbbf24;    /* amber-400 instead of amber-500 */
+  --accent5: #f87171;    /* red-400 instead of red-500 */
 }
 
 :root[data-theme='light'] {
@@ -47,8 +49,8 @@ body {
 
 body {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--text);
   background: var(--bg);
   min-height: 100vh;
@@ -128,7 +130,7 @@ textarea {
   padding: 10px 14px;
   color: var(--text);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.4;
   outline: none;
   width: 100%;

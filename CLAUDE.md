@@ -25,30 +25,39 @@ Import:
 
 ```css
 :root {
-  /* Base */
-  --bg:       #0a0a0f;   /* fundo principal */
-  --surface:  #111118;   /* cards, sidebar, code blocks */
-  --surface2: #16161f;   /* hover states */
-  --border:   #1e1e2e;   /* bordas padrão */
-  --border2:  #2a2a3e;   /* bordas hover */
-  --dim:      #1a1a2e;   /* fundos internos, table headers */
+  /* Base — tons levemente mais claros que o "ultra-dark" inicial, pra reduzir
+     fadiga visual sem perder a estética dev-tool */
+  --bg:       #0d0e15;   /* fundo principal */
+  --surface:  #16171f;   /* cards, sidebar, code blocks */
+  --surface2: #1c1d28;   /* hover states */
+  --border:   #262734;   /* bordas padrão */
+  --border2:  #353648;   /* bordas hover */
+  --dim:      #1e1f2c;   /* fundos internos, table headers */
 
-  /* Texto */
-  --text:  #e2e8f0;  /* texto principal */
-  --muted: #64748b;  /* texto secundário */
-  --muted2:#475569;  /* texto terciário, labels */
+  /* Texto — todos os valores passam WCAG AA (>= 4.5:1) contra --bg */
+  --text:  #e8edf5;  /* texto principal — ratio ~16:1 */
+  --muted: #a3b1c6;  /* secundário — ratio ~9.5:1 */
+  --muted2:#7b8aa3;  /* terciário, labels — ratio ~5.8:1 */
 
-  /* Accent principal */
-  --accent:      #7C3AED;              /* roxo — cor primária */
-  --accent-glow: rgba(124,58,237,0.15);/* roxo transparente */
+  /* Accent principal — slightly brighter pra contraste em fundo escuro */
+  --accent:      #8b5cf6;              /* roxo — cor primária */
+  --accent-glow: rgba(139,92,246,0.18);
 
-  /* Accents secundários */
-  --accent2: #06b6d4;  /* cyan  — Chatwoot, infos */
-  --accent3: #10b981;  /* verde — Sheets, sucesso */
-  --accent4: #f59e0b;  /* amber — Meta, avisos */
-  --accent5: #ef4444;  /* red   — erros, Redis */
+  /* Accents secundários (variantes -400, mais claras que -500) */
+  --accent2: #22d3ee;  /* cyan  — Chatwoot, infos */
+  --accent3: #34d399;  /* verde — Sheets, sucesso */
+  --accent4: #fbbf24;  /* amber — Meta, avisos */
+  --accent5: #f87171;  /* red   — erros, Redis */
 }
 ```
+
+### Acessibilidade & Legibilidade
+
+- **Body font-size:** 14px (não 13px); line-height 1.6
+- **Labels uppercase:** 11px minimum, tracking entre `0.06em` e `0.1em` (nunca `0.18em+`)
+- **Helper text terciário:** 10-11px, sempre com `--muted2` ou superior em contraste
+- **Tracking dense (`0.18em`, `0.2em`) é proibido em body** — só pode em badges curtos (1-2 palavras)
+- Todo texto colorido tem que passar WCAG AA contra `--bg`
 
 ### Noise Overlay
 

@@ -103,7 +103,7 @@ function MauticTab() {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-text">{it.name}</div>
           <div className="mt-1 text-[11px] text-muted">{it.url}</div>
-          <div className="mt-1 text-[10px] text-muted-2">user: {it.username}</div>
+          <div className="mt-1 text-[11px] text-muted-2">user: {it.username}</div>
         </div>
       )}
       onDelete={(id) => remove.mutate(id)}
@@ -179,7 +179,7 @@ function ChatwootTab() {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-text">{it.name}</div>
           <div className="mt-1 text-[11px] text-muted">{it.url}</div>
-          <div className="mt-1 text-[10px] text-muted-2">account_id: {it.account_id}</div>
+          <div className="mt-1 text-[11px] text-muted-2">account_id: {it.account_id}</div>
         </div>
       )}
       onDelete={(id) => remove.mutate(id)}
@@ -253,7 +253,7 @@ function MetaTab() {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-text">{it.name}</div>
           <div className="mt-1 text-[11px] text-muted">phone_number_id: {it.phone_number_id}</div>
-          <div className="mt-1 text-[10px] text-muted-2">api: {it.api_version}</div>
+          <div className="mt-1 text-[11px] text-muted-2">api: {it.api_version}</div>
         </div>
       )}
       onDelete={(id) => remove.mutate(id)}
@@ -325,7 +325,7 @@ function FormField({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.18em] text-muted">
+      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
         {label}
       </span>
       <input
