@@ -36,6 +36,7 @@ export function CampaignsPage() {
           <div className="relative w-60">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted">⌕</span>
             <input
+              type="search"
               placeholder="buscar por nome, token, produto..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}

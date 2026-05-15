@@ -117,6 +117,7 @@ export function LogsPage() {
 
       <div className="mb-5">
         <input
+          type="search"
           placeholder={tab === 'dlq' ? 'buscar em DLQ...' : 'buscar token...'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
