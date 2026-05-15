@@ -140,7 +140,30 @@ export async function mergeLabels(
   await setLabels(cfg, contactId, merged);
 }
 
-// ─── Discovery (inboxes + templates) ─────────────────────────────────────────
+// ─── Discovery (labels + inboxes + templates) ───────────────────────────────
+
+export interface ChatwootLabel {
+  id: number;
+  title: string;
+  description?: string;
+  color?: string;
+}
+
+/**
+ * List labels available at the account level. Chatwoot labels are global per
+ * account (not per-inbox), so any campaign on this Chatwoot instance can use
+ * any of these.
+ */
+export async function listLabels(cfg: ChatwootConfig): Promise<ChatwootLabel[]> {
+  const { body } = await http(cfg, `/api/v1/accounts/${cfg.accountId}/labels`);
+  const payload = (body as { payload?: ChatwootLabel[] }).payload ?? [];
+  // Sort by title for stable picker order
+  payload.sort((a, b) => a.title.localeCompare(b.title));
+  log.info({ count: payload.length }, 'chatwoot_list_labels');
+  return payload;
+}
+
+
 
 export interface ChatwootInbox {
   id: number;

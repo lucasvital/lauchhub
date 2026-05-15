@@ -35,7 +35,13 @@ const baseCampaign = {
   product_name: null,
   sheets_id: 'sheet-id',
   chatwoot_inbox_id: 14,
-  chatwoot_tags: { compra_aprovada: ['aluno'] },
+  chatwoot_event_config: {
+    compra_aprovada: {
+      labels_add: ['aluno'],
+      labels_remove: [],
+      skip_if_has_label: [],
+    },
+  },
   mautic_event_config: {
     compra_aprovada: {
       segments_add: [38],

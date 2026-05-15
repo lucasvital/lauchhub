@@ -108,6 +108,12 @@ export interface MauticEventConfig {
   skip_if_has_tag: string[];
 }
 
+export interface ChatwootEventConfig {
+  labels_add: string[];
+  labels_remove: string[];
+  skip_if_has_label: string[];
+}
+
 export interface MetaTemplateConfig {
   template_name: string;
   template_params: Record<string, string>;
@@ -125,7 +131,7 @@ export interface Campaign {
   chatwoot_instance_id: string | null;
   mautic_instance_id: string | null;
   chatwoot_inbox_id: number | null;
-  chatwoot_tags: Record<string, string[]>;
+  chatwoot_event_config: Partial<Record<EventId, ChatwootEventConfig>>;
   mautic_event_config: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers: Record<string, WorkerId[]>;
@@ -161,6 +167,13 @@ export interface ChatwootInboxOption {
   id: number;
   name: string;
   channel_type: string;
+}
+
+export interface ChatwootLabelOption {
+  id: number;
+  title: string;
+  description?: string;
+  color?: string;
 }
 
 export interface ChatwootTemplateOption {

@@ -1,23 +1,25 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   api,
   type Campaign,
+  type ChatwootEventConfig,
+  type ChatwootInboxOption,
+  type ChatwootLabelOption,
+  type ChatwootTemplateOption,
+  type EventId,
   type InstanceSummary,
   type MauticEventConfig,
-  type MauticTagOption,
-  type MauticSegmentOption,
   type MauticFieldOption,
+  type MauticSegmentOption,
+  type MauticTagOption,
   type MetaTemplateConfig,
-  type ChatwootInboxOption,
-  type ChatwootTemplateOption,
+  type WorkerId,
   EVENTS,
   WORKERS,
-  type EventId,
-  type WorkerId,
 } from '../lib/api';
-import { Badge, Card, Button, Callout, WorkerChip } from '../components/ui';
+import { Card, Button, Callout, WorkerChip } from '../components/ui';
 
 function emptyMauticEventConfig(): MauticEventConfig {
   return {
@@ -28,6 +30,83 @@ function emptyMauticEventConfig(): MauticEventConfig {
     custom_fields: {},
     skip_if_has_tag: [],
   };
+}
+
+function emptyChatwootEventConfig(): ChatwootEventConfig {
+  return { labels_add: [], labels_remove: [], skip_if_has_label: [] };
+}
+
+function emptyMetaTemplateConfig(): MetaTemplateConfig {
+  return { template_name: '', template_params: {}, language: 'pt_BR' };
+}
+
+type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved';
+
+/**
+ * Debounced auto-save for per-event config editors.
+ *
+ * Every time `draft` changes (via `setDraft`), a 800ms timer schedules a
+ * `patch()` call. While the user keeps typing the timer resets. Saving while
+ * a mutation is in flight is naturally suppressed (we only patch when the
+ * draft differs from the latest known config).
+ *
+ * The hook returns a `status` for UI feedback: idle | dirty | saving | saved.
+ */
+function useAutoSavedEvent<T>(opts: {
+  selectedEvent: EventId;
+  config: Partial<Record<EventId, T>>;
+  emptyDraft: () => T;
+  patch: (next: Partial<Record<EventId, T>>) => void;
+  saving: boolean;
+}) {
+  const { selectedEvent, config, emptyDraft, patch, saving } = opts;
+  const initial = useMemo(
+    () => config[selectedEvent] ?? emptyDraft(),
+    // emptyDraft is a stable function but deps must include selectedEvent + config
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [config, selectedEvent],
+  );
+  const [draft, setDraft] = useState<T>(initial);
+  const [showSaved, setShowSaved] = useState(false);
+
+  // Reset draft when switching event or when external config refetches with new data
+  const externalKey = `${selectedEvent}:${JSON.stringify(initial)}`;
+  const lastKeyRef = useRef(externalKey);
+  if (externalKey !== lastKeyRef.current) {
+    lastKeyRef.current = externalKey;
+    setDraft(initial);
+  }
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
+
+  // Debounce save 800ms after the last edit
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!dirty || saving) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      patch({ ...config, [selectedEvent]: draft });
+      setShowSaved(true);
+      setTimeout(() => setShowSaved(false), 1500);
+    }, 800);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, dirty]);
+
+  const status: SaveStatus = saving ? 'saving' : dirty ? 'dirty' : showSaved ? 'saved' : 'idle';
+
+  return { draft, setDraft, status };
+}
+
+function SaveStatusBadge({ status }: { status: SaveStatus }) {
+  if (status === 'idle') return null;
+  const text =
+    status === 'saving' ? 'salvando…' : status === 'saved' ? '✓ salvo' : 'alterações pendentes';
+  const color =
+    status === 'saved' ? 'text-accent-3' : status === 'saving' ? 'text-muted' : 'text-accent-4';
+  return <span className={`text-[11px] ${color}`}>{text}</span>;
 }
 
 export function CampaignDetailPage() {
@@ -278,6 +357,13 @@ export function CampaignDetailPage() {
         })}
       </Card>
 
+      <ChatwootEventEditor
+        chatwootInstanceId={c.chatwoot_instance_id}
+        config={c.chatwoot_event_config}
+        onSave={(next) => patchCampaign.mutate({ chatwoot_event_config: next })}
+        saving={patchCampaign.isPending}
+      />
+
       <MauticEventEditor
         mauticInstanceId={c.mautic_instance_id}
         config={c.mautic_event_config}
@@ -295,21 +381,22 @@ export function CampaignDetailPage() {
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card accent="cyan">
-          <h3>// Chatwoot</h3>
+          <h3>// Chatwoot — resumo</h3>
           <div className="mt-3 space-y-2 text-[11px]">
             <div>
               <span className="text-muted">Inbox ID:</span>{' '}
               <span className="text-text">{c.chatwoot_inbox_id ?? '—'}</span>
             </div>
-            {Object.entries(c.chatwoot_tags ?? {}).map(([ev, tags]) => (
+            {Object.entries(c.chatwoot_event_config ?? {}).length === 0 && (
+              <div className="text-muted-2">— nenhum evento configurado</div>
+            )}
+            {Object.entries(c.chatwoot_event_config ?? {}).map(([ev, cfg]) => (
               <div key={ev}>
                 <code className="text-accent-2">{ev}</code>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {(tags ?? []).map((t) => (
-                    <Badge key={t} color="cyan">
-                      {t}
-                    </Badge>
-                  ))}
+                <div className="mt-1 text-[11px] text-muted">
+                  {(cfg?.labels_add?.length ?? 0) > 0 && <>label+ {cfg!.labels_add.length} </>}
+                  {(cfg?.labels_remove?.length ?? 0) > 0 && <>label- {cfg!.labels_remove.length} </>}
+                  {(cfg?.skip_if_has_label?.length ?? 0) > 0 && <>skip {cfg!.skip_if_has_label.length} </>}
                 </div>
               </div>
             ))}
@@ -411,29 +498,16 @@ function MauticEventEditor({
   saving: boolean;
 }) {
   const [selectedEvent, setSelectedEvent] = useState<EventId>(EVENTS[0].id);
-  const initial = useMemo(
-    () => config[selectedEvent] ?? emptyMauticEventConfig(),
-    [config, selectedEvent],
-  );
-  const [draft, setDraft] = useState<MauticEventConfig>(initial);
-  const [dirty, setDirty] = useState(false);
-
-  // Reset draft when switching event or when external config changes (after save)
-  const key = `${selectedEvent}:${JSON.stringify(initial)}`;
-  const [lastKey, setLastKey] = useState(key);
-  if (key !== lastKey) {
-    setDraft(initial);
-    setDirty(false);
-    setLastKey(key);
-  }
+  const { draft, setDraft, status } = useAutoSavedEvent<MauticEventConfig>({
+    selectedEvent,
+    config,
+    emptyDraft: emptyMauticEventConfig,
+    patch: onSave,
+    saving,
+  });
 
   function update<K extends keyof MauticEventConfig>(field: K, value: MauticEventConfig[K]) {
     setDraft((d) => ({ ...d, [field]: value }));
-    setDirty(true);
-  }
-
-  function save() {
-    onSave({ ...config, [selectedEvent]: draft });
   }
 
   return (
@@ -443,24 +517,27 @@ function MauticEventEditor({
           <h3>// Mautic — config por evento</h3>
           <p className="mt-1.5 text-[11px] text-muted">
             Define o que fazer no Mautic quando esse evento chega. UTMs são enviados automaticamente
-            (utmsource, utmmedium, utmcampaign, utmcontent, utmterm).
+            (utmsource, utmmedium, utmcampaign, utmcontent, utmterm). Salva automaticamente.
           </p>
         </div>
-        <label className="block min-w-[220px]">
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-            Evento
-          </span>
-          <select
-            value={selectedEvent}
-            onChange={(e) => setSelectedEvent(e.target.value as EventId)}
-          >
-            {EVENTS.map((ev) => (
-              <option key={ev.id} value={ev.id}>
-                {ev.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-end gap-3">
+          <SaveStatusBadge status={status} />
+          <label className="block min-w-[220px]">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Evento
+            </span>
+            <select
+              value={selectedEvent}
+              onChange={(e) => setSelectedEvent(e.target.value as EventId)}
+            >
+              {EVENTS.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {!mauticInstanceId && (
@@ -510,13 +587,6 @@ function MauticEventEditor({
           values={draft.skip_if_has_tag}
           onChange={(v) => update('skip_if_has_tag', v)}
         />
-      </div>
-
-      <div className="mt-5 flex items-center justify-end gap-3">
-        {dirty && <span className="text-[11px] text-accent-4">alterações não salvas</span>}
-        <Button disabled={!dirty || saving} onClick={save}>
-          {saving ? 'Salvando...' : 'Salvar evento'}
-        </Button>
       </div>
     </Card>
   );
@@ -841,10 +911,6 @@ function Chip({
 
 // ─── WhatsApp template editor (via Chatwoot) ─────────────────────────────────
 
-function emptyMetaTemplateConfig(): MetaTemplateConfig {
-  return { template_name: '', template_params: {}, language: 'pt_BR' };
-}
-
 /** Extracts {{1}}, {{2}}, … placeholders from the template BODY component. */
 function extractTemplatePlaceholders(template: ChatwootTemplateOption): string[] {
   const body = template.components.find(
@@ -901,20 +967,13 @@ function MetaTemplatesEditor({
   saving: boolean;
 }) {
   const [selectedEvent, setSelectedEvent] = useState<EventId>(EVENTS[0].id);
-  const initial = useMemo(
-    () => config[selectedEvent] ?? emptyMetaTemplateConfig(),
-    [config, selectedEvent],
-  );
-  const [draft, setDraft] = useState<MetaTemplateConfig>(initial);
-  const [dirty, setDirty] = useState(false);
-
-  const key = `${selectedEvent}:${JSON.stringify(initial)}`;
-  const [lastKey, setLastKey] = useState(key);
-  if (key !== lastKey) {
-    setDraft(initial);
-    setDirty(false);
-    setLastKey(key);
-  }
+  const { draft, setDraft, status } = useAutoSavedEvent<MetaTemplateConfig>({
+    selectedEvent,
+    config,
+    emptyDraft: emptyMetaTemplateConfig,
+    patch: onSave,
+    saving,
+  });
 
   const inboxesQuery = useChatwootInboxes(chatwootInstanceId);
   const templatesQuery = useChatwootInboxTemplates(chatwootInstanceId, chatwootInboxId);
@@ -928,7 +987,6 @@ function MetaTemplatesEditor({
 
   function updateName(name: string, language: string) {
     setDraft((d) => {
-      // Reset params when switching template
       const isSwitch = name !== d.template_name || language !== (d.language ?? 'pt_BR');
       return {
         template_name: name,
@@ -936,26 +994,12 @@ function MetaTemplatesEditor({
         template_params: isSwitch ? {} : d.template_params,
       };
     });
-    setDirty(true);
   }
   function updateParam(key: string, value: string) {
     setDraft((d) => ({ ...d, template_params: { ...d.template_params, [key]: value } }));
-    setDirty(true);
   }
-
-  function save() {
-    if (!draft.template_name) {
-      // Clear: removing the event from the config
-      const { [selectedEvent]: _, ...rest } = config;
-      onSave(rest);
-      return;
-    }
-    onSave({ ...config, [selectedEvent]: draft });
-  }
-
   function clearEvent() {
     setDraft(emptyMetaTemplateConfig());
-    setDirty(true);
   }
 
   return (
@@ -964,26 +1008,29 @@ function MetaTemplatesEditor({
         <div>
           <h3>// WhatsApp templates — config por evento</h3>
           <p className="mt-1.5 text-[11px] text-muted">
-            Templates aprovados na inbox WhatsApp do Chatwoot. O envio rola pela inbox
+            Templates aprovados na inbox WhatsApp do Chatwoot. Envio pela inbox
             <code className="mx-1 text-accent-2">{chatwootInboxId ?? '?'}</code>
-            ({inbox?.name ?? 'inbox não selecionada'}).
+            ({inbox?.name ?? 'inbox não selecionada'}). Salva automaticamente.
           </p>
         </div>
-        <label className="block min-w-[220px]">
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-            Evento
-          </span>
-          <select
-            value={selectedEvent}
-            onChange={(e) => setSelectedEvent(e.target.value as EventId)}
-          >
-            {EVENTS.map((ev) => (
-              <option key={ev.id} value={ev.id}>
-                {ev.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-end gap-3">
+          <SaveStatusBadge status={status} />
+          <label className="block min-w-[220px]">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Evento
+            </span>
+            <select
+              value={selectedEvent}
+              onChange={(e) => setSelectedEvent(e.target.value as EventId)}
+            >
+              {EVENTS.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {!chatwootInstanceId && (
@@ -1083,13 +1130,179 @@ function MetaTemplatesEditor({
         {selectedTemplate && placeholders.length === 0 && (
           <Callout kind="tip">Esse template não tem variáveis — nada pra preencher.</Callout>
         )}
+
+        {draft.template_name && (
+          <div className="flex items-center justify-end">
+            <Button variant="ghost" size="sm" onClick={clearEvent}>
+              limpar evento
+            </Button>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Chatwoot per-event editor ────────────────────────────────────────────────
+
+function useChatwootLabels(chatwootInstanceId: string | null) {
+  return useQuery({
+    queryKey: ['chatwoot-discovery', chatwootInstanceId, 'labels'],
+    enabled: Boolean(chatwootInstanceId),
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      api.get<{ ok: true; items: ChatwootLabelOption[] }>(
+        `/api/instances/chatwoot/${chatwootInstanceId}/labels`,
+      ),
+  });
+}
+
+function ChatwootLabelPicker({
+  chatwootInstanceId,
+  label,
+  hint,
+  values,
+  onChange,
+}: {
+  chatwootInstanceId: string | null;
+  label: string;
+  hint?: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const q = useChatwootLabels(chatwootInstanceId);
+  const labels = q.data?.items ?? [];
+  const [selectValue, setSelectValue] = useState('');
+  const available = labels.map((l) => l.title).filter((t) => !values.includes(t));
+
+  function add(title: string) {
+    const v = title.trim();
+    if (!v || values.includes(v)) return;
+    onChange([...values, v]);
+    setSelectValue('');
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <ChipListHeader label={label} hint={hint} />
+        <PickerStatus
+          isLoading={q.isLoading}
+          isError={q.isError}
+          count={labels.length}
+          onRefetch={() => q.refetch()}
+        />
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {values.map((t) => (
+          <Chip key={t} onRemove={() => onChange(values.filter((x) => x !== t))}>
+            {t}
+          </Chip>
+        ))}
+        <select
+          value={selectValue}
+          onChange={(e) => {
+            if (e.target.value) add(e.target.value);
+          }}
+          disabled={!chatwootInstanceId || q.isLoading || available.length === 0}
+          className="!w-auto !py-1.5 !px-2.5 !text-[12px] min-w-[260px]"
+        >
+          <option value="">+ adicionar label…</option>
+          {available.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function ChatwootEventEditor({
+  chatwootInstanceId,
+  config,
+  onSave,
+  saving,
+}: {
+  chatwootInstanceId: string | null;
+  config: Partial<Record<EventId, ChatwootEventConfig>>;
+  onSave: (next: Partial<Record<EventId, ChatwootEventConfig>>) => void;
+  saving: boolean;
+}) {
+  const [selectedEvent, setSelectedEvent] = useState<EventId>(EVENTS[0].id);
+  const { draft, setDraft, status } = useAutoSavedEvent<ChatwootEventConfig>({
+    selectedEvent,
+    config,
+    emptyDraft: emptyChatwootEventConfig,
+    patch: onSave,
+    saving,
+  });
+
+  function update<K extends keyof ChatwootEventConfig>(
+    field: K,
+    value: ChatwootEventConfig[K],
+  ) {
+    setDraft((d) => ({ ...d, [field]: value }));
+  }
+
+  return (
+    <Card accent="cyan" className="mt-6">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3>// Chatwoot — config por evento</h3>
+          <p className="mt-1.5 text-[11px] text-muted">
+            Labels a aplicar / remover do contato. Skip pula o evento se o contato já tem alguma das labels (ex: já é comprador). Salva automaticamente.
+          </p>
+        </div>
+        <div className="flex items-end gap-3">
+          <SaveStatusBadge status={status} />
+          <label className="block min-w-[220px]">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Evento
+            </span>
+            <select
+              value={selectedEvent}
+              onChange={(e) => setSelectedEvent(e.target.value as EventId)}
+            >
+              {EVENTS.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
-      <div className="mt-5 flex items-center justify-end gap-3">
-        {dirty && <span className="text-[11px] text-accent-4">alterações não salvas</span>}
-        <Button disabled={!dirty || saving} onClick={save}>
-          {saving ? 'Salvando...' : 'Salvar evento'}
-        </Button>
+      {!chatwootInstanceId && (
+        <Callout kind="warn">
+          Selecione uma instância Chatwoot acima pra carregar as labels disponíveis.
+        </Callout>
+      )}
+
+      <div className="space-y-4">
+        <ChatwootLabelPicker
+          chatwootInstanceId={chatwootInstanceId}
+          label="Labels — adicionar"
+          hint="Labels que vão ser anexadas ao contato (merge com as existentes)"
+          values={draft.labels_add}
+          onChange={(v) => update('labels_add', v)}
+        />
+        <ChatwootLabelPicker
+          chatwootInstanceId={chatwootInstanceId}
+          label="Labels — remover"
+          hint="Limpar estados antigos (ex: tirar abandono quando virar comprador)"
+          values={draft.labels_remove}
+          onChange={(v) => update('labels_remove', v)}
+        />
+        <ChatwootLabelPicker
+          chatwootInstanceId={chatwootInstanceId}
+          label="Skip se contato já tem label"
+          hint="Se o contato já tem qualquer dessas labels, o evento é ignorado"
+          values={draft.skip_if_has_label}
+          onChange={(v) => update('skip_if_has_label', v)}
+        />
       </div>
     </Card>
   );

@@ -42,7 +42,7 @@ async function sliceConfig(
         chatwoot_token: creds.token,
         chatwoot_account_id: creds.account_id,
         chatwoot_inbox_id: campaign.chatwoot_inbox_id,
-        chatwoot_tags: campaign.chatwoot_tags[event] ?? [],
+        chatwoot_event: campaign.chatwoot_event_config[event] ?? null,
       };
     }
     case 'mautic': {

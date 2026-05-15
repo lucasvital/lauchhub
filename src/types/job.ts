@@ -62,6 +62,17 @@ export interface MauticEventConfig {
 }
 
 /**
+ * Per-event Chatwoot operations (stored as campaigns.chatwoot_event_config).
+ * Symmetric to Mautic. Labels are merged onto the contact (Chatwoot's POST
+ * /labels overwrites, so the worker reads-merges-writes).
+ */
+export interface ChatwootEventConfig {
+  labels_add: string[];
+  labels_remove: string[];
+  skip_if_has_label: string[];
+}
+
+/**
  * Per-event WhatsApp template config, sent via Chatwoot's official WhatsApp
  * Cloud inbox (NOT direct Meta Cloud API).
  *
@@ -88,11 +99,12 @@ export interface JobConfigSlice {
   sheets_id?: string | null;
 
   // Chatwoot — per-campaign instance (URL/token/account resolved at enrich)
+  // plus per-event config block resolved from campaign.chatwoot_event_config[event]
   chatwoot_url?: string | null;
   chatwoot_token?: string | null;
   chatwoot_account_id?: string | null;
   chatwoot_inbox_id?: number | null;
-  chatwoot_tags?: string[];
+  chatwoot_event?: ChatwootEventConfig | null;
 
   // Mautic — per-campaign instance (URL/username/password resolved at enrich)
   // plus the event-specific config block resolved from campaign.mautic_event_config[event]

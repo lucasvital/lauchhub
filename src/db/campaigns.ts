@@ -1,5 +1,11 @@
 import { query } from './index.js';
-import type { EventId, MauticEventConfig, MetaTemplateConfig, WorkerId } from '../types/job.js';
+import type {
+  ChatwootEventConfig,
+  EventId,
+  MauticEventConfig,
+  MetaTemplateConfig,
+  WorkerId,
+} from '../types/job.js';
 
 export interface CampaignRow {
   id: string;
@@ -14,7 +20,7 @@ export interface CampaignRow {
   mautic_instance_id: string | null;
   // Per-campaign config
   chatwoot_inbox_id: number | null;
-  chatwoot_tags: Record<string, string[]>;
+  chatwoot_event_config: Partial<Record<EventId, ChatwootEventConfig>>;
   mautic_event_config: Partial<Record<EventId, MauticEventConfig>>;
   // Meta worker now sends WhatsApp templates via Chatwoot's official WhatsApp
   // inbox — using the same chatwoot_instance_id + chatwoot_inbox_id as the
@@ -36,7 +42,7 @@ export interface CampaignCreateInput {
   chatwoot_instance_id?: string | null;
   mautic_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
-  chatwoot_tags?: Record<string, string[]>;
+  chatwoot_event_config?: Partial<Record<EventId, ChatwootEventConfig>>;
   mautic_event_config?: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates?: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers?: Record<string, WorkerId[]>;
@@ -52,7 +58,7 @@ export interface CampaignUpdateInput {
   chatwoot_instance_id?: string | null;
   mautic_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
-  chatwoot_tags?: Record<string, string[]>;
+  chatwoot_event_config?: Partial<Record<EventId, ChatwootEventConfig>>;
   mautic_event_config?: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates?: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers?: Record<string, WorkerId[]>;
@@ -61,7 +67,7 @@ export interface CampaignUpdateInput {
 const ALL_COLS = `
   id, name, campaign_token, product_id, product_name, expert_name,
   sheets_id,
-  chatwoot_instance_id, chatwoot_inbox_id, chatwoot_tags,
+  chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
   mautic_instance_id, mautic_event_config,
   meta_templates,
   enabled_workers, active, created_at, updated_at
@@ -120,7 +126,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
     `INSERT INTO campaigns
        (name, campaign_token, product_id, product_name, expert_name,
         sheets_id,
-        chatwoot_instance_id, chatwoot_inbox_id, chatwoot_tags,
+        chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
         mautic_instance_id, mautic_event_config,
         meta_templates,
         enabled_workers, active)
@@ -140,7 +146,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       input.sheets_id ?? null,
       input.chatwoot_instance_id ?? null,
       input.chatwoot_inbox_id ?? null,
-      JSON.stringify(input.chatwoot_tags ?? {}),
+      JSON.stringify(input.chatwoot_event_config ?? {}),
       input.mautic_instance_id ?? null,
       JSON.stringify(input.mautic_event_config ?? {}),
       JSON.stringify(input.meta_templates ?? {}),
@@ -169,7 +175,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.sheets_id !== undefined) setField('sheets_id', patch.sheets_id);
   if (patch.chatwoot_instance_id !== undefined) setField('chatwoot_instance_id', patch.chatwoot_instance_id);
   if (patch.chatwoot_inbox_id !== undefined) setField('chatwoot_inbox_id', patch.chatwoot_inbox_id);
-  if (patch.chatwoot_tags !== undefined) setField('chatwoot_tags', patch.chatwoot_tags, true);
+  if (patch.chatwoot_event_config !== undefined) setField('chatwoot_event_config', patch.chatwoot_event_config, true);
   if (patch.mautic_instance_id !== undefined) setField('mautic_instance_id', patch.mautic_instance_id);
   if (patch.mautic_event_config !== undefined) setField('mautic_event_config', patch.mautic_event_config, true);
   if (patch.meta_templates !== undefined) setField('meta_templates', patch.meta_templates, true);

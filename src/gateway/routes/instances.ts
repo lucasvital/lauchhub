@@ -3,6 +3,7 @@ import * as instances from '../../db/instances.js';
 import {
   listInboxTemplates,
   listInboxes,
+  listLabels,
 } from '../../integrations/chatwoot/client.js';
 import {
   listContactFields,
@@ -227,6 +228,23 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
       if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
       try {
         const items = await listInboxes(chatwootCfg(inst));
+        return { ok: true, items };
+      } catch (err) {
+        return reply
+          .code(502)
+          .send({ ok: false, error: 'chatwoot_unreachable', detail: String(err) });
+      }
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/api/instances/chatwoot/:id/labels',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const inst = await instances.chatwoot.findById(req.params.id);
+      if (!inst) return reply.code(404).send({ ok: false, error: 'not_found' });
+      try {
+        const items = await listLabels(chatwootCfg(inst));
         return { ok: true, items };
       } catch (err) {
         return reply
