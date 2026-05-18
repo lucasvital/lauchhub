@@ -10,6 +10,7 @@ import {
   listSegments,
   listTags,
 } from '../../integrations/mautic/client.js';
+import { listSheetTabs } from '../../integrations/sheets/client.js';
 
 interface PingResult {
   ok: boolean;
@@ -271,6 +272,27 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
         return reply
           .code(502)
           .send({ ok: false, error: 'chatwoot_unreachable', detail: String(err) });
+      }
+    },
+  );
+
+  // Sheets discovery — Sheets uses one global service account, so the route
+  // takes the spreadsheet_id as a query param instead of an instance id.
+  app.get<{ Querystring: { spreadsheet_id?: string } }>(
+    '/api/sheets/tabs',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const spreadsheetId = req.query.spreadsheet_id?.trim();
+      if (!spreadsheetId) {
+        return reply.code(400).send({ ok: false, error: 'missing_spreadsheet_id' });
+      }
+      try {
+        const items = await listSheetTabs(spreadsheetId);
+        return { ok: true, items };
+      } catch (err) {
+        return reply
+          .code(502)
+          .send({ ok: false, error: 'sheets_unreachable', detail: String(err) });
       }
     },
   );

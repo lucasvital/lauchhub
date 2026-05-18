@@ -15,6 +15,7 @@ export interface CampaignRow {
   product_name: string | null;
   expert_name: string | null;
   sheets_id: string | null;
+  sheets_tab: string | null;
   // FK references — when null, the worker for that channel is effectively disabled
   chatwoot_instance_id: string | null;
   mautic_instance_id: string | null;
@@ -39,6 +40,7 @@ export interface CampaignCreateInput {
   product_name?: string | null;
   expert_name?: string | null;
   sheets_id?: string | null;
+  sheets_tab?: string | null;
   chatwoot_instance_id?: string | null;
   mautic_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
@@ -55,6 +57,7 @@ export interface CampaignUpdateInput {
   product_name?: string | null;
   expert_name?: string | null;
   sheets_id?: string | null;
+  sheets_tab?: string | null;
   chatwoot_instance_id?: string | null;
   mautic_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
@@ -66,7 +69,7 @@ export interface CampaignUpdateInput {
 
 const ALL_COLS = `
   id, name, campaign_token, product_id, product_name, expert_name,
-  sheets_id,
+  sheets_id, sheets_tab,
   chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
   mautic_instance_id, mautic_event_config,
   meta_templates,
@@ -125,17 +128,17 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
   const r = await query<CampaignRow>(
     `INSERT INTO campaigns
        (name, campaign_token, product_id, product_name, expert_name,
-        sheets_id,
+        sheets_id, sheets_tab,
         chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
         mautic_instance_id, mautic_event_config,
         meta_templates,
         enabled_workers, active)
      VALUES ($1,$2,$3,$4,$5,
-             $6,
-             $7,$8,$9::jsonb,
-             $10,$11::jsonb,
-             $12::jsonb,
-             $13::jsonb,$14)
+             $6,$7,
+             $8,$9,$10::jsonb,
+             $11,$12::jsonb,
+             $13::jsonb,
+             $14::jsonb,$15)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -144,6 +147,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       input.product_name ?? null,
       input.expert_name ?? null,
       input.sheets_id ?? null,
+      input.sheets_tab ?? null,
       input.chatwoot_instance_id ?? null,
       input.chatwoot_inbox_id ?? null,
       JSON.stringify(input.chatwoot_event_config ?? {}),
@@ -173,6 +177,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.product_name !== undefined) setField('product_name', patch.product_name);
   if (patch.expert_name !== undefined) setField('expert_name', patch.expert_name);
   if (patch.sheets_id !== undefined) setField('sheets_id', patch.sheets_id);
+  if (patch.sheets_tab !== undefined) setField('sheets_tab', patch.sheets_tab);
   if (patch.chatwoot_instance_id !== undefined) setField('chatwoot_instance_id', patch.chatwoot_instance_id);
   if (patch.chatwoot_inbox_id !== undefined) setField('chatwoot_inbox_id', patch.chatwoot_inbox_id);
   if (patch.chatwoot_event_config !== undefined) setField('chatwoot_event_config', patch.chatwoot_event_config, true);

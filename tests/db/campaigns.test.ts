@@ -22,6 +22,7 @@ const fakeRow = {
   product_name: null,
   expert_name: null,
   sheets_id: null,
+  sheets_tab: null,
   chatwoot_instance_id: null,
   mautic_instance_id: null,
   chatwoot_inbox_id: null,

@@ -27,34 +27,72 @@ function getClient(): sheets_v4.Sheets {
   return cachedClient;
 }
 
-const HEADER_ROW = [
-  'timestamp',
-  'event',
-  'name',
-  'email',
-  'phone',
-  'order_id',
-  'payment_method',
-  'value',
-];
-
 /**
- * Ensure first row of the sheet has the canonical header.
- * No-op if header already present.
+ * Canonical 32-column header — fixed schema dictated by the customer's
+ * downstream pivot/formula sheets. Do NOT reorder.
+ *
+ * Some columns are computed by spreadsheet formulas (Campaign Name, Adset
+ * Name, Ad Name, utm_id=) so the worker writes empty strings for them and
+ * lets the sheet's own formulas derive values from the s=/m=/c=/co=/t= cols.
  */
-async function ensureHeader(client: sheets_v4.Sheets, spreadsheetId: string): Promise<void> {
+export const SHEETS_HEADER = [
+  'ID',
+  'Data Criação',
+  'Evento',
+  'Nome',
+  'E-mail',
+  'Telefone',
+  'Instagram',
+  'Cidade',
+  'Moeda',
+  'Valor oferta',
+  'ID do produto',
+  'Transaction',
+  'Preço',
+  'Order Bump?',
+  'Produto',
+  'Líquido',
+  'sck',
+  's=',
+  'm=',
+  'c=',
+  'co=',
+  't=',
+  'utm_id=',
+  'Campaign Name',
+  'Adset Name',
+  'Ad Name',
+  'Moeda Produto',
+  'Moeda Original',
+  'Moeda de recebimento',
+  'Preço Original',
+  'Tipo Pagamento',
+  'execution',
+] as const;
+
+const HEADER_RANGE_COLUMNS = 'A:AF'; // A..AF = 32 cols
+const HEADER_RANGE_ROW1 = 'A1:AF1';
+
+function escapeTab(tab: string): string {
+  // Sheet names with spaces / special chars must be wrapped in single quotes.
+  return /^[A-Za-z0-9_]+$/.test(tab) ? tab : `'${tab.replace(/'/g, "''")}'`;
+}
+
+async function ensureHeader(
+  client: sheets_v4.Sheets,
+  spreadsheetId: string,
+  tab: string,
+): Promise<void> {
+  const range = `${escapeTab(tab)}!${HEADER_RANGE_ROW1}`;
   try {
-    const r = await client.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Sheet1!A1:H1',
-    });
+    const r = await client.spreadsheets.values.get({ spreadsheetId, range });
     const row = r.data.values?.[0];
-    if (!row || row[0] !== 'timestamp') {
+    if (!row || row[0] !== SHEETS_HEADER[0]) {
       await client.spreadsheets.values.update({
         spreadsheetId,
-        range: 'Sheet1!A1:H1',
+        range,
         valueInputOption: 'RAW',
-        requestBody: { values: [HEADER_ROW] },
+        requestBody: { values: [SHEETS_HEADER as unknown as string[]] },
       });
     }
   } catch (err) {
@@ -66,17 +104,20 @@ async function ensureHeader(client: sheets_v4.Sheets, spreadsheetId: string): Pr
 
 export interface AppendInput {
   spreadsheetId: string;
+  /** Tab/sheet name within the spreadsheet. Required. */
+  tab: string;
   row: (string | number | null)[];
 }
 
 export async function appendRow(input: AppendInput): Promise<void> {
   const client = getClient();
-  await ensureHeader(client, input.spreadsheetId);
+  await ensureHeader(client, input.spreadsheetId, input.tab);
 
+  const range = `${escapeTab(input.tab)}!${HEADER_RANGE_COLUMNS}`;
   try {
     await client.spreadsheets.values.append({
       spreadsheetId: input.spreadsheetId,
-      range: 'Sheet1!A:H',
+      range,
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: [input.row.map((v) => v ?? '')] },
@@ -85,6 +126,37 @@ export async function appendRow(input: AppendInput): Promise<void> {
     const status = (err as { code?: number }).code;
     if (typeof status === 'number') throw classifyHttpError(status, err);
     throw new TransientError(`Sheets append error: ${String(err)}`, 'network');
+  }
+}
+
+export interface SheetTab {
+  /** Stable internal id (sheetId). Use as key, but display `title`. */
+  id: number;
+  title: string;
+}
+
+/**
+ * List the tabs (sheets) inside a spreadsheet. Used by the painel to
+ * populate the tab picker.
+ */
+export async function listSheetTabs(spreadsheetId: string): Promise<SheetTab[]> {
+  const client = getClient();
+  try {
+    const r = await client.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(sheetId,title))',
+    });
+    const out: SheetTab[] = [];
+    for (const s of r.data.sheets ?? []) {
+      if (s.properties?.title != null && s.properties.sheetId != null) {
+        out.push({ id: s.properties.sheetId, title: s.properties.title });
+      }
+    }
+    return out;
+  } catch (err) {
+    const status = (err as { code?: number }).code;
+    if (typeof status === 'number') throw classifyHttpError(status, err);
+    throw new TransientError(`Sheets listTabs error: ${String(err)}`, 'network');
   }
 }
 

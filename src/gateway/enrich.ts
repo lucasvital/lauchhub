@@ -34,7 +34,7 @@ async function sliceConfig(
 ): Promise<JobConfigSlice> {
   switch (worker) {
     case 'sheets':
-      return { sheets_id: campaign.sheets_id };
+      return { sheets_id: campaign.sheets_id, sheets_tab: campaign.sheets_tab };
     case 'chatwoot': {
       const creds = await resolveChatwootCreds(campaign);
       return {

@@ -15,6 +15,7 @@ import {
   type MauticSegmentOption,
   type MauticTagOption,
   type MetaTemplateConfig,
+  type SheetTabOption,
   type WorkerId,
   EVENTS,
   WORKERS,
@@ -273,19 +274,12 @@ export function CampaignDetailPage() {
               placeholder="14"
             />
           </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-              Google Sheets — Spreadsheet ID
-            </span>
-            <input
-              defaultValue={c.sheets_id ?? ''}
-              onBlur={(e) => {
-                const v = e.target.value || null;
-                if (v !== c.sheets_id) patchCampaign.mutate({ sheets_id: v });
-              }}
-              placeholder="1a2B3cD4..."
-            />
-          </label>
+          <SheetsPicker
+            sheetsId={c.sheets_id}
+            sheetsTab={c.sheets_tab}
+            onChangeId={(v) => patchCampaign.mutate({ sheets_id: v })}
+            onChangeTab={(v) => patchCampaign.mutate({ sheets_tab: v })}
+          />
         </div>
         <Callout kind="tip">
           Quando o dropdown está em "— fallback global —", as credenciais vêm do <code>.env</code> do
@@ -422,10 +416,23 @@ export function CampaignDetailPage() {
           </div>
         </Card>
         <Card accent="green">
-          <h3>// Google Sheets</h3>
-          <div className="mt-3 text-[11px]">
-            <span className="text-muted">Spreadsheet ID:</span>{' '}
-            <code className="text-accent-3">{c.sheets_id ?? '—'}</code>
+          <h3>// Google Sheets — resumo</h3>
+          <div className="mt-3 space-y-1.5 text-[11px]">
+            <div>
+              <span className="text-muted">Spreadsheet ID:</span>{' '}
+              <code className="text-accent-3">{c.sheets_id ?? '—'}</code>
+            </div>
+            <div>
+              <span className="text-muted">Aba:</span>{' '}
+              <code className="text-accent-3">{c.sheets_tab ?? '— (default "vendas")'}</code>
+            </div>
+            <div className="mt-2 text-[10px] text-muted-2">
+              32 colunas fixas: ID, Data Criação, Evento, Nome, E-mail, Telefone, Instagram, Cidade,
+              Moeda, Valor oferta, ID produto, Transaction, Preço, Order Bump?, Produto, Líquido,
+              sck, s=, m=, c=, co=, t=, utm_id=, Campaign Name*, Adset Name*, Ad Name*,
+              Moeda Produto, Moeda Original, Moeda recebimento, Preço Original, Tipo Pagamento,
+              execution. (*) computado por fórmula na própria planilha.
+            </div>
           </div>
         </Card>
         <Card accent="amber">
@@ -1305,5 +1312,80 @@ function ChatwootEventEditor({
         />
       </div>
     </Card>
+  );
+}
+
+// ─── Sheets picker (spreadsheet id + tab dropdown) ───────────────────────────
+
+function useSheetTabs(spreadsheetId: string | null) {
+  return useQuery({
+    queryKey: ['sheets-discovery', 'tabs', spreadsheetId],
+    enabled: Boolean(spreadsheetId),
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      api.get<{ ok: true; items: SheetTabOption[] }>(
+        `/api/sheets/tabs?spreadsheet_id=${encodeURIComponent(spreadsheetId!)}`,
+      ),
+  });
+}
+
+function SheetsPicker({
+  sheetsId,
+  sheetsTab,
+  onChangeId,
+  onChangeTab,
+}: {
+  sheetsId: string | null;
+  sheetsTab: string | null;
+  onChangeId: (v: string | null) => void;
+  onChangeTab: (v: string | null) => void;
+}) {
+  const q = useSheetTabs(sheetsId);
+  const tabs = q.data?.items ?? [];
+
+  return (
+    <div className="block sm:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-[2fr_1fr]">
+      <label className="block">
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+          Google Sheets — Spreadsheet ID
+        </span>
+        <input
+          defaultValue={sheetsId ?? ''}
+          onBlur={(e) => {
+            const v = e.target.value.trim() || null;
+            if (v !== sheetsId) onChangeId(v);
+          }}
+          placeholder="1a2B3cD4..."
+        />
+      </label>
+      <label className="block">
+        <div className="flex items-end justify-between">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+            Aba (tab)
+          </span>
+          <PickerStatus
+            isLoading={q.isLoading}
+            isError={q.isError}
+            count={tabs.length}
+            onRefetch={() => q.refetch()}
+          />
+        </div>
+        <select
+          value={sheetsTab ?? ''}
+          onChange={(e) => onChangeTab(e.target.value || null)}
+          disabled={!sheetsId || q.isLoading}
+        >
+          <option value="">— escolha uma aba —</option>
+          {tabs.map((t) => (
+            <option key={t.id} value={t.title}>
+              {t.title}
+            </option>
+          ))}
+          {sheetsTab && !tabs.find((t) => t.title === sheetsTab) && (
+            <option value={sheetsTab}>{sheetsTab} (não encontrada)</option>
+          )}
+        </select>
+      </label>
+    </div>
   );
 }

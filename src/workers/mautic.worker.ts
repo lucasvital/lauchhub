@@ -21,12 +21,14 @@ const log = logger.child({ worker: 'mautic' });
  * These are always sent when the UTM is present in the webhook payload.
  * NOT user-configurable — every campaign uses the same Mautic UTM aliases.
  */
-const UTM_FIELD_MAP: Record<keyof UtmInfo, string> = {
+const UTM_FIELD_MAP: Partial<Record<keyof UtmInfo, string>> = {
   utm_source: 'utmsource',
   utm_medium: 'utmmedium',
   utm_campaign: 'utmcampaign',
   utm_content: 'utmcontent',
   utm_term: 'utmterm',
+  // sck / utm_id intentionally omitted — they don't map to standard Mautic
+  // aliases; they live in the Sheets worker for analytics use.
 };
 
 function utmCustomFields(utm: UtmInfo): Record<string, string> {

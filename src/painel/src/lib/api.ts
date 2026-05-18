@@ -128,6 +128,7 @@ export interface Campaign {
   product_name: string | null;
   expert_name: string | null;
   sheets_id: string | null;
+  sheets_tab: string | null;
   chatwoot_instance_id: string | null;
   mautic_instance_id: string | null;
   chatwoot_inbox_id: number | null;
@@ -174,6 +175,11 @@ export interface ChatwootLabelOption {
   title: string;
   description?: string;
   color?: string;
+}
+
+export interface SheetTabOption {
+  id: number;
+  title: string;
 }
 
 export interface ChatwootTemplateOption {

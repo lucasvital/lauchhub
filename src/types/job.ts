@@ -22,6 +22,8 @@ export interface ContactInfo {
   email: string | null;
   phone: string | null;
   first_name?: string;
+  instagram: string | null;
+  city: string | null;
 }
 
 export interface OrderInfo {
@@ -32,6 +34,18 @@ export interface OrderInfo {
   value: number | null;
   product_id: string | null;
   product_name: string | null;
+  /** Commissions.currency (e.g. "BRL") */
+  currency: string | null;
+  /** Commissions.product_base_price — list price before discounts */
+  product_base_price: number | null;
+  /** Commissions.product_base_price_currency */
+  product_base_price_currency: string | null;
+  /** Commissions.my_commission — net to the receiving store */
+  my_commission: number | null;
+  /** Whether the order contained an upsell/bump (Products.length > 1) */
+  is_order_bump: boolean;
+  /** Kiwify's internal transaction identifier */
+  payment_merchant_id: string | null;
 }
 
 /**
@@ -45,6 +59,10 @@ export interface UtmInfo {
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
+  /** Kiwify short-code tracking parameter `sck` */
+  sck: string | null;
+  /** UTM ID parameter (when caller propagates Meta Ads utm_id) */
+  utm_id: string | null;
 }
 
 /**
@@ -95,8 +113,9 @@ export interface MetaTemplateConfig {
  * WhatsApp number). Empty fields fall back to the global `global_config`.
  */
 export interface JobConfigSlice {
-  // Sheets — global service account, per-campaign spreadsheet id
+  // Sheets — global service account, per-campaign spreadsheet id + tab name
   sheets_id?: string | null;
+  sheets_tab?: string | null;
 
   // Chatwoot — per-campaign instance (URL/token/account resolved at enrich)
   // plus per-event config block resolved from campaign.chatwoot_event_config[event]

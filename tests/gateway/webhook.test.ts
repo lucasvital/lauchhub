@@ -34,6 +34,7 @@ const baseCampaign = {
   product_id: null,
   product_name: null,
   sheets_id: 'sheet-id',
+  sheets_tab: null,
   chatwoot_inbox_id: 14,
   chatwoot_event_config: {
     compra_aprovada: {
