@@ -10,7 +10,8 @@ import {
   listSegments,
   listTags,
 } from '../../integrations/mautic/client.js';
-import { listSheetTabs } from '../../integrations/sheets/client.js';
+import { listSheetTabs, parseServiceAccount } from '../../integrations/sheets/client.js';
+import { config } from '../../config.js';
 
 interface PingResult {
   ok: boolean;
@@ -272,6 +273,44 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
         return reply
           .code(502)
           .send({ ok: false, error: 'chatwoot_unreachable', detail: String(err) });
+      }
+    },
+  );
+
+  // Sheets credential diagnostic — what does the gateway process actually
+  // see for GOOGLE_SERVICE_ACCOUNT_JSON? Used to debug Coolify/docker env
+  // delivery problems. Never returns the secret itself — only its shape.
+  app.get(
+    '/api/sheets/diagnostic',
+    { preHandler: app.requireAuth },
+    async () => {
+      const raw = config.GOOGLE_SERVICE_ACCOUNT_JSON;
+      if (!raw || raw.trim() === '') {
+        return {
+          ok: false,
+          configured: false,
+          message: 'env var missing or empty in the running process',
+        };
+      }
+      try {
+        const creds = parseServiceAccount(raw);
+        const looksJson = raw.trim().startsWith('{');
+        return {
+          ok: true,
+          configured: true,
+          format_detected: looksJson ? 'raw_json' : 'base64',
+          length: raw.length,
+          client_email: creds.client_email ?? null,
+          private_key_present: typeof creds.private_key === 'string' && creds.private_key.includes('PRIVATE KEY'),
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          configured: true,
+          format_detected: 'unknown',
+          length: raw.length,
+          error: String(err),
+        };
       }
     },
   );

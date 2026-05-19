@@ -4,18 +4,47 @@ import { FatalError, TransientError, classifyHttpError } from '../_shared/errors
 
 let cachedClient: sheets_v4.Sheets | null = null;
 
+/**
+ * Decode the Google service account credential from env. Accepts either:
+ *   (a) Raw JSON — the original payload Google gives you
+ *   (b) Base64-encoded JSON — workaround for environments that mangle the
+ *       newlines in `private_key` (Coolify, Docker -e, etc.)
+ *
+ * Detection: starts with `{` → raw JSON; otherwise treat as base64.
+ */
+export function parseServiceAccount(raw: string): { client_email: string; private_key: string } {
+  let jsonText = raw.trim();
+  if (!jsonText.startsWith('{')) {
+    try {
+      jsonText = Buffer.from(jsonText, 'base64').toString('utf8').trim();
+    } catch (err) {
+      throw new FatalError(
+        `GOOGLE_SERVICE_ACCOUNT_JSON is not raw JSON nor valid base64: ${String(err)}`,
+        'bad_json',
+      );
+    }
+  }
+  try {
+    return JSON.parse(jsonText) as { client_email: string; private_key: string };
+  } catch (err) {
+    throw new FatalError(
+      `Invalid GOOGLE_SERVICE_ACCOUNT_JSON (length=${raw.length}): ${String(err)}`,
+      'bad_json',
+    );
+  }
+}
+
 function getClient(): sheets_v4.Sheets {
   if (cachedClient) return cachedClient;
-  if (!config.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    throw new FatalError('GOOGLE_SERVICE_ACCOUNT_JSON is not configured', 'no_credentials');
+  const raw = config.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!raw || raw.trim() === '') {
+    throw new FatalError(
+      'GOOGLE_SERVICE_ACCOUNT_JSON env var is missing or empty in the gateway process',
+      'no_credentials',
+    );
   }
 
-  let creds: { client_email: string; private_key: string };
-  try {
-    creds = JSON.parse(config.GOOGLE_SERVICE_ACCOUNT_JSON);
-  } catch (err) {
-    throw new FatalError(`Invalid GOOGLE_SERVICE_ACCOUNT_JSON: ${String(err)}`, 'bad_json');
-  }
+  const creds = parseServiceAccount(raw);
 
   const auth = new google.auth.JWT({
     email: creds.client_email,
