@@ -101,11 +101,19 @@ export function WorkerChip({
 }) {
   // Glyph font scales with chip size — keeps the single letter readable
   // whether the consumer uses 18px (toggle matrix) or 32px+ (DLQ rows).
-  const fontSize = Math.max(10, Math.round(size * 0.55));
+  // Wide letters (W, M) need a slightly tighter scale + negative tracking
+  // so they don't overflow the rounded square.
+  const isWide = glyph === 'W' || glyph === 'M';
+  const fontSize = Math.max(10, Math.round(size * (isWide ? 0.45 : 0.55)));
   return (
     <span
-      style={{ width: size, height: size, fontSize: `${fontSize}px` }}
-      className={`inline-grid place-items-center rounded font-display font-extrabold text-white tracking-tightest transition-opacity ${active ? 'opacity-100' : 'opacity-40 bg-border'} ${active ? workerBg[workerId] ?? 'bg-border' : ''}`}
+      style={{
+        width: size,
+        height: size,
+        fontSize: `${fontSize}px`,
+        letterSpacing: isWide ? '-0.08em' : '-0.03em',
+      }}
+      className={`inline-grid place-items-center overflow-hidden rounded font-display font-extrabold leading-none text-white transition-opacity ${active ? 'opacity-100' : 'opacity-40 bg-border'} ${active ? workerBg[workerId] ?? 'bg-border' : ''}`}
     >
       {glyph}
     </span>

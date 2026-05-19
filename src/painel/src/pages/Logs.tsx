@@ -1,7 +1,16 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, type WorkerId, WORKERS } from '../lib/api';
+import { api, EVENTS, type EventId, type WorkerId, WORKERS } from '../lib/api';
 import { Card, Badge, Button, Callout, SectionLabel, WorkerChip } from '../components/ui';
+
+type DateFilter = 'all' | '1h' | '24h' | '7d';
+
+const DATE_FILTERS: { id: DateFilter; label: string; ms: number | null }[] = [
+  { id: 'all', label: 'todo período', ms: null },
+  { id: '1h', label: 'última 1h', ms: 60 * 60_000 },
+  { id: '24h', label: 'últimas 24h', ms: 24 * 60 * 60_000 },
+  { id: '7d', label: 'últimos 7 dias', ms: 7 * 24 * 60 * 60_000 },
+];
 
 interface DlqJobData {
   event?: string;
@@ -27,6 +36,18 @@ interface UnmatchedItem {
   created_at: string;
 }
 
+/**
+ * Match Kiwify raw event tokens (e.g. "abandoned_cart", "pix.generated") to
+ * our canonical EventId. Used to filter unmatched events whose payload
+ * carries Kiwify-shape strings rather than our enum.
+ */
+function eventLabelMatches(kiwifyToken: string, eventId: EventId): boolean {
+  const t = kiwifyToken.toLowerCase();
+  const ev = EVENTS.find((e) => e.id === eventId);
+  if (!ev) return false;
+  return t === eventId || t === ev.sub.toLowerCase() || t.startsWith(ev.sub.toLowerCase());
+}
+
 function timeAgo(ts: number | string): string {
   const t = typeof ts === 'number' ? ts : new Date(ts).getTime();
   const diff = Math.max(0, Date.now() - t);
@@ -43,6 +64,14 @@ export function LogsPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<'dlq' | 'unmatched'>('dlq');
   const [query, setQuery] = useState('');
+  const [workerFilter, setWorkerFilter] = useState<WorkerId | 'all'>('all');
+  const [eventFilter, setEventFilter] = useState<EventId | 'all'>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+
+  const dateCutoff = useMemo(() => {
+    const ms = DATE_FILTERS.find((d) => d.id === dateFilter)?.ms ?? null;
+    return ms ? Date.now() - ms : null;
+  }, [dateFilter]);
 
   const dlq = useQuery({
     queryKey: ['dlq', { query }],
@@ -80,8 +109,47 @@ export function LogsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['unmatched'] }),
   });
 
-  const dlqItems = dlq.data ?? [];
-  const unmatchedItems = unmatched.data ?? [];
+  const allDlq = dlq.data ?? [];
+  const allUnmatched = unmatched.data ?? [];
+
+  const dlqItems = useMemo(
+    () =>
+      allDlq.filter((j) => {
+        if (workerFilter !== 'all' && j.worker !== workerFilter) return false;
+        if (eventFilter !== 'all' && j.data?.event !== eventFilter) return false;
+        if (dateCutoff !== null && j.timestamp < dateCutoff) return false;
+        return true;
+      }),
+    [allDlq, workerFilter, eventFilter, dateCutoff],
+  );
+
+  const unmatchedItems = useMemo(
+    () =>
+      allUnmatched.filter((u) => {
+        if (dateCutoff !== null && new Date(u.created_at).getTime() < dateCutoff) return false;
+        if (eventFilter !== 'all') {
+          const p = (u.payload ?? {}) as { webhook_event_type?: string; order_status?: string };
+          // Map Kiwify raw event_type/status to our EventId for filter compare
+          const candidates = [p.webhook_event_type, p.order_status].filter(Boolean) as string[];
+          const matchesEvent = candidates.some(
+            (c) => eventLabelMatches(c, eventFilter),
+          );
+          if (!matchesEvent) return false;
+        }
+        return true;
+      }),
+    [allUnmatched, eventFilter, dateCutoff],
+  );
+
+  const activeFilters =
+    (workerFilter !== 'all' ? 1 : 0) +
+    (eventFilter !== 'all' ? 1 : 0) +
+    (dateFilter !== 'all' ? 1 : 0);
+  const clearFilters = () => {
+    setWorkerFilter('all');
+    setEventFilter('all');
+    setDateFilter('all');
+  };
 
   return (
     <div>
@@ -122,15 +190,82 @@ export function LogsPage() {
         </button>
       </div>
 
-      <div className="mb-5">
-        <input
-          type="search"
-          placeholder={tab === 'dlq' ? 'buscar em DLQ...' : 'buscar token...'}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-72"
-        />
-      </div>
+      <Card tight className="mb-5">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block min-w-[260px] flex-1">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Buscar
+            </span>
+            <input
+              type="search"
+              placeholder={
+                tab === 'dlq' ? 'erro, email, token, correlation_id…' : 'token, email, produto…'
+              }
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          {tab === 'dlq' && (
+            <label className="block min-w-[160px]">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                Worker
+              </span>
+              <select
+                value={workerFilter}
+                onChange={(e) => setWorkerFilter(e.target.value as WorkerId | 'all')}
+              >
+                <option value="all">todos</option>
+                {WORKERS.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="block min-w-[200px]">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Evento
+            </span>
+            <select
+              value={eventFilter}
+              onChange={(e) => setEventFilter(e.target.value as EventId | 'all')}
+            >
+              <option value="all">todos</option>
+              {EVENTS.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block min-w-[160px]">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Período
+            </span>
+            <select
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value as DateFilter)}
+            >
+              {DATE_FILTERS.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {activeFilters > 0 && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              ✕ limpar ({activeFilters})
+            </Button>
+          )}
+        </div>
+        <div className="mt-2 text-[11px] text-muted-2">
+          {tab === 'dlq'
+            ? `${dlqItems.length} de ${allDlq.length} jobs`
+            : `${unmatchedItems.length} de ${allUnmatched.length} eventos`}
+        </div>
+      </Card>
 
       {tab === 'dlq' && (
         <>
