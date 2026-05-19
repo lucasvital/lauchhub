@@ -10,8 +10,11 @@ import {
   listSegments,
   listTags,
 } from '../../integrations/mautic/client.js';
-import { listSheetTabs, parseServiceAccount } from '../../integrations/sheets/client.js';
-import { config } from '../../config.js';
+import {
+  __getResolvedCredsString,
+  listSheetTabs,
+  parseServiceAccount,
+} from '../../integrations/sheets/client.js';
 
 interface PingResult {
   ok: boolean;
@@ -278,18 +281,19 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
   );
 
   // Sheets credential diagnostic — what does the gateway process actually
-  // see for GOOGLE_SERVICE_ACCOUNT_JSON? Used to debug Coolify/docker env
-  // delivery problems. Never returns the secret itself — only its shape.
+  // resolve for the Google service account? Checks both sources (DB-stored
+  // /settings value AND env var). Never returns the secret itself — only
+  // its shape.
   app.get(
     '/api/sheets/diagnostic',
     { preHandler: app.requireAuth },
     async () => {
-      const raw = config.GOOGLE_SERVICE_ACCOUNT_JSON;
-      if (!raw || raw.trim() === '') {
+      const raw = await __getResolvedCredsString();
+      if (!raw) {
         return {
           ok: false,
           configured: false,
-          message: 'env var missing or empty in the running process',
+          message: 'Service account JSON not found in /settings (global_config) nor in GOOGLE_SERVICE_ACCOUNT_JSON env var',
         };
       }
       try {
@@ -301,7 +305,8 @@ export async function registerInstancesRoutes(app: FastifyInstance): Promise<voi
           format_detected: looksJson ? 'raw_json' : 'base64',
           length: raw.length,
           client_email: creds.client_email ?? null,
-          private_key_present: typeof creds.private_key === 'string' && creds.private_key.includes('PRIVATE KEY'),
+          private_key_present:
+            typeof creds.private_key === 'string' && creds.private_key.includes('PRIVATE KEY'),
         };
       } catch (err) {
         return {

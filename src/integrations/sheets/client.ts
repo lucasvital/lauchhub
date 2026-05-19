@@ -1,8 +1,26 @@
 import { google, type sheets_v4 } from 'googleapis';
 import { config } from '../../config.js';
+import { getRawValue } from '../../db/global-config.js';
 import { FatalError, TransientError, classifyHttpError } from '../_shared/errors.js';
 
 let cachedClient: sheets_v4.Sheets | null = null;
+let cachedCredsSource: string | null = null; // value-key the cache was built from
+
+/**
+ * Resolve the service account JSON from (in order):
+ *   1. `global_config.google_service_account_json` row (set via painel /settings)
+ *   2. `GOOGLE_SERVICE_ACCOUNT_JSON` env var (legacy / boot fallback)
+ *
+ * The painel-stored value wins so operators can rotate the JSON without
+ * redeploying the gateway.
+ */
+async function resolveCredsString(): Promise<string | null> {
+  const dbValue = await getRawValue('google_service_account_json');
+  if (dbValue && dbValue.trim() !== '') return dbValue;
+  const envValue = config.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (envValue && envValue.trim() !== '') return envValue;
+  return null;
+}
 
 /**
  * Decode the Google service account credential from env. Accepts either:
@@ -34,15 +52,18 @@ export function parseServiceAccount(raw: string): { client_email: string; privat
   }
 }
 
-function getClient(): sheets_v4.Sheets {
-  if (cachedClient) return cachedClient;
-  const raw = config.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!raw || raw.trim() === '') {
+async function getClient(): Promise<sheets_v4.Sheets> {
+  const raw = await resolveCredsString();
+  if (!raw) {
     throw new FatalError(
-      'GOOGLE_SERVICE_ACCOUNT_JSON env var is missing or empty in the gateway process',
+      'Google service account not configured — set it in /settings (Service Account JSON) or via GOOGLE_SERVICE_ACCOUNT_JSON env var',
       'no_credentials',
     );
   }
+
+  // Cache invalidates when the source string changes (e.g. user updates JSON
+  // in /settings). Avoids stale auth after a rotation.
+  if (cachedClient && cachedCredsSource === raw) return cachedClient;
 
   const creds = parseServiceAccount(raw);
 
@@ -53,6 +74,7 @@ function getClient(): sheets_v4.Sheets {
   });
 
   cachedClient = google.sheets({ version: 'v4', auth });
+  cachedCredsSource = raw;
   return cachedClient;
 }
 
@@ -139,7 +161,7 @@ export interface AppendInput {
 }
 
 export async function appendRow(input: AppendInput): Promise<void> {
-  const client = getClient();
+  const client = await getClient();
   await ensureHeader(client, input.spreadsheetId, input.tab);
 
   const range = `${escapeTab(input.tab)}!${HEADER_RANGE_COLUMNS}`;
@@ -169,7 +191,7 @@ export interface SheetTab {
  * populate the tab picker.
  */
 export async function listSheetTabs(spreadsheetId: string): Promise<SheetTab[]> {
-  const client = getClient();
+  const client = await getClient();
   try {
     const r = await client.spreadsheets.get({
       spreadsheetId,
@@ -195,4 +217,14 @@ export async function listSheetTabs(spreadsheetId: string): Promise<SheetTab[]> 
  */
 export function __setClientForTests(c: sheets_v4.Sheets | null): void {
   cachedClient = c;
+  cachedCredsSource = c ? '__test__' : null;
+}
+
+/**
+ * Diagnostic-only: returns the raw credential string the client would use,
+ * or null if neither source is configured. Used by the painel's
+ * /api/sheets/diagnostic endpoint.
+ */
+export async function __getResolvedCredsString(): Promise<string | null> {
+  return resolveCredsString();
 }
