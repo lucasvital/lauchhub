@@ -3,13 +3,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type WorkerId, WORKERS } from '../lib/api';
 import { Card, Badge, Button, Callout, SectionLabel, WorkerChip } from '../components/ui';
 
+interface DlqJobData {
+  event?: string;
+  campaign_token?: string;
+  contact?: { email?: string | null; phone?: string | null };
+  correlation_id?: string;
+}
+
 interface DlqItem {
   id: string;
   worker: WorkerId;
   name: string;
   attempts: number;
   failedReason: string;
-  data: unknown;
+  data: DlqJobData;
   timestamp: number;
 }
 
@@ -138,29 +145,54 @@ export function LogsPage() {
             <div className="space-y-3">
               {dlqItems.map((j) => {
                 const workerMeta = WORKERS.find((w) => w.id === j.worker);
+                const event = j.data?.event ?? null;
+                const token = j.data?.campaign_token ?? null;
+                const email = j.data?.contact?.email ?? null;
+                const phone = j.data?.contact?.phone ?? null;
                 return (
                   <Card key={`${j.worker}:${j.id}`} accent="red" tight>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                        {workerMeta && (
-                          <WorkerChip workerId={workerMeta.id} glyph={workerMeta.glyph} size={20} />
-                        )}
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-semibold text-text">{j.name}</span>
-                            <Badge color="red">{j.attempts}/4 tentativas</Badge>
+                    <div className="flex items-start gap-4">
+                      {workerMeta && (
+                        <div className="flex flex-col items-center gap-1 pt-0.5">
+                          <WorkerChip workerId={workerMeta.id} glyph={workerMeta.glyph} size={36} />
+                          <span className="text-[10px] uppercase tracking-[0.06em] text-muted">
+                            {workerMeta.label}
+                          </span>
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                          {event && (
+                            <code className="rounded-sm bg-dim px-1.5 py-0.5 text-[12px] text-accent-2">
+                              {event}
+                            </code>
+                          )}
+                          {token && (
+                            <code className="text-[12px] text-muted">
+                              <span className="text-muted-2">token:</span> {token}
+                            </code>
+                          )}
+                          <Badge color="red">{j.attempts}/4 tentativas</Badge>
+                        </div>
+                        {(email || phone) && (
+                          <div className="mb-1.5 text-[12px] text-muted">
+                            {email && <span>{email}</span>}
+                            {email && phone && <span className="mx-1.5 text-muted-2">·</span>}
+                            {phone && <span>{phone}</span>}
                           </div>
-                          <div className="truncate text-[11px] text-accent-5">{j.failedReason}</div>
+                        )}
+                        <div className="rounded-sm border border-accent-5/30 bg-accent-5/[0.06] px-3 py-2 text-[12px] leading-relaxed text-accent-5 break-words">
+                          {j.failedReason || 'sem detalhe do erro'}
                         </div>
                       </div>
-                      <div className="flex flex-shrink-0 items-center gap-2">
+                      <div className="flex flex-shrink-0 flex-col items-end gap-2 pt-0.5">
                         <span className="text-[11px] text-muted-2">{timeAgo(j.timestamp)}</span>
                         <Button
                           size="sm"
                           onClick={() => retryOne.mutate({ worker: j.worker, id: j.id })}
                           disabled={retryOne.isPending}
                         >
-                          Reprocessar
+                          ↻ Reprocessar
                         </Button>
                       </div>
                     </div>
@@ -187,30 +219,82 @@ export function LogsPage() {
           ) : (
             <div className="space-y-3">
               {unmatchedItems.map((u) => (
-                <Card key={u.id} accent="amber" tight>
-                  <div className="mb-2 flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-text">
-                        token: <code className="text-accent-4">{u.token ?? '(vazio)'}</code>
-                      </span>
-                      <Badge color="amber">SEM CAMPANHA</Badge>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-muted-2">{timeAgo(u.created_at)}</span>
-                      <Button size="sm" variant="danger" onClick={() => discard.mutate(u.id)}>
-                        Descartar
-                      </Button>
-                    </div>
-                  </div>
-                  <pre className="overflow-x-auto rounded border border-border bg-dim p-3 text-[11px] text-muted">
-                    {JSON.stringify(u.payload, null, 2)}
-                  </pre>
-                </Card>
+                <UnmatchedRow key={u.id} item={u} onDiscard={() => discard.mutate(u.id)} />
               ))}
             </div>
           )}
         </>
       )}
     </div>
+  );
+}
+
+interface KiwifyPreview {
+  webhook_event_type?: string;
+  order_status?: string;
+  order_id?: string;
+  Customer?: { full_name?: string; email?: string; mobile?: string };
+  Product?: { product_name?: string };
+  Products?: Array<{ name?: string; product_name?: string }>;
+}
+
+function UnmatchedRow({
+  item,
+  onDiscard,
+}: {
+  item: UnmatchedItem;
+  onDiscard: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const p = (item.payload ?? {}) as KiwifyPreview;
+  const eventType = p.webhook_event_type ?? p.order_status ?? '—';
+  const customerName = p.Customer?.full_name ?? null;
+  const customerEmail = p.Customer?.email ?? null;
+  const productName =
+    p.Product?.product_name ?? p.Products?.[0]?.name ?? p.Products?.[0]?.product_name ?? null;
+
+  return (
+    <Card accent="amber" tight>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+            <Badge color="amber">SEM CAMPANHA</Badge>
+            <code className="text-[12px] text-accent-4">
+              <span className="text-muted-2">token:</span> {item.token ?? '(vazio)'}
+            </code>
+            <code className="rounded-sm bg-dim px-1.5 py-0.5 text-[11px] text-accent-2">
+              {eventType}
+            </code>
+          </div>
+          {(customerName || customerEmail || productName) && (
+            <div className="text-[12px] text-muted">
+              {customerName && <span className="text-text">{customerName}</span>}
+              {customerName && customerEmail && <span className="mx-1.5 text-muted-2">·</span>}
+              {customerEmail && <span>{customerEmail}</span>}
+              {(customerName || customerEmail) && productName && (
+                <span className="mx-1.5 text-muted-2">·</span>
+              )}
+              {productName && <span className="text-accent-2">{productName}</span>}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-shrink-0 flex-col items-end gap-2">
+          <span className="text-[11px] text-muted-2">{timeAgo(item.created_at)}</span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setOpen((o) => !o)}>
+              {open ? '▼ ocultar JSON' : '▶ ver JSON'}
+            </Button>
+            <Button size="sm" variant="danger" onClick={onDiscard}>
+              Descartar
+            </Button>
+          </div>
+        </div>
+      </div>
+      {open && (
+        <pre className="mt-3 max-h-96 overflow-auto rounded border border-border bg-dim p-3 text-[12px] leading-relaxed text-muted">
+          {JSON.stringify(item.payload, null, 2)}
+        </pre>
+      )}
+    </Card>
   );
 }

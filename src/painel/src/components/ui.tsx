@@ -91,7 +91,7 @@ const workerBg: Record<string, string> = {
 export function WorkerChip({
   workerId,
   active = true,
-  size = 18,
+  size = 24,
   glyph,
 }: {
   workerId: string;
@@ -99,10 +99,13 @@ export function WorkerChip({
   size?: number;
   glyph: string;
 }) {
+  // Glyph font scales with chip size — keeps the single letter readable
+  // whether the consumer uses 18px (toggle matrix) or 32px+ (DLQ rows).
+  const fontSize = Math.max(10, Math.round(size * 0.55));
   return (
     <span
-      style={{ width: size, height: size }}
-      className={`inline-grid place-items-center rounded-[3px] text-[8px] font-display font-extrabold text-white tracking-tightest transition-opacity ${active ? 'opacity-100' : 'opacity-40 bg-border'} ${active ? workerBg[workerId] ?? 'bg-border' : ''}`}
+      style={{ width: size, height: size, fontSize: `${fontSize}px` }}
+      className={`inline-grid place-items-center rounded font-display font-extrabold text-white tracking-tightest transition-opacity ${active ? 'opacity-100' : 'opacity-40 bg-border'} ${active ? workerBg[workerId] ?? 'bg-border' : ''}`}
     >
       {glyph}
     </span>
