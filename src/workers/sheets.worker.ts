@@ -1,6 +1,7 @@
 import { Worker, type Job } from 'bullmq';
 import { FatalError } from '../integrations/_shared/errors.js';
 import { appendRow as defaultAppendRow } from '../integrations/sheets/client.js';
+import { formatCentsBRL } from '../shared/currency.js';
 import { logger } from '../shared/logger.js';
 import type { WebhookJob } from '../types/job.js';
 
@@ -34,13 +35,13 @@ export function buildRow(job: WebhookJob): (string | number | null)[] {
     /*  7 Instagram             */ c.instagram ?? '',
     /*  8 Cidade                */ c.city ?? '',
     /*  9 Moeda                 */ o.currency ?? '',
-    /* 10 Valor oferta          */ o.value ?? '',
+    /* 10 Valor oferta          */ formatCentsBRL(o.value),
     /* 11 ID do produto         */ o.product_id ?? '',
     /* 12 Transaction           */ o.payment_merchant_id ?? o.ref ?? '',
-    /* 13 Preço                 */ o.value ?? '',
+    /* 13 Preço                 */ formatCentsBRL(o.value),
     /* 14 Order Bump?           */ o.is_order_bump ? 'Sim' : 'Não',
     /* 15 Produto               */ o.product_name ?? '',
-    /* 16 Líquido               */ o.my_commission ?? '',
+    /* 16 Líquido               */ formatCentsBRL(o.my_commission),
     /* 17 sck                   */ u.sck ?? '',
     /* 18 s=                    */ u.utm_source ?? '',
     /* 19 m=                    */ u.utm_medium ?? '',
@@ -54,7 +55,7 @@ export function buildRow(job: WebhookJob): (string | number | null)[] {
     /* 27 Moeda Produto         */ o.product_base_price_currency ?? '',
     /* 28 Moeda Original        */ o.currency ?? '',
     /* 29 Moeda de recebimento  */ o.currency ?? '',
-    /* 30 Preço Original        */ o.product_base_price ?? '',
+    /* 30 Preço Original        */ formatCentsBRL(o.product_base_price),
     /* 31 Tipo Pagamento        */ o.payment_method ?? '',
     /* 32 execution             */ job.correlation_id,
   ];
