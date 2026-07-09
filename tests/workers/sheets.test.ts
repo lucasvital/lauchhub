@@ -63,13 +63,13 @@ describe('sheets buildRow', () => {
     expect(row[6]).toBe('@joao');                              // Instagram
     expect(row[7]).toBe('Curitiba');                           // Cidade
     expect(row[8]).toBe('BRL');                                // Moeda
-    expect(row[9]).toBe(1997);                                 // Valor oferta
+    expect(row[9]).toBe('19,97');                              // Valor oferta (cents → BRL)
     expect(row[10]).toBe('kw-prod-1');                         // ID do produto
     expect(row[11]).toBe('pmid-42');                           // Transaction
-    expect(row[12]).toBe(1997);                                // Preço
+    expect(row[12]).toBe('19,97');                             // Preço (cents → BRL)
     expect(row[13]).toBe('Não');                               // Order Bump?
     expect(row[14]).toBe('Imersão');                           // Produto
-    expect(row[15]).toBe(1771);                                // Líquido
+    expect(row[15]).toBe('17,71');                             // Líquido (cents → BRL)
     expect(row[16]).toBe('sck-99');                            // sck
     expect(row[17]).toBe('whatsapp');                          // s=
     expect(row[18]).toBe('grupo');                             // m=
@@ -83,7 +83,7 @@ describe('sheets buildRow', () => {
     expect(row[26]).toBe('BRL');                               // Moeda Produto
     expect(row[27]).toBe('BRL');                               // Moeda Original
     expect(row[28]).toBe('BRL');                               // Moeda de recebimento
-    expect(row[29]).toBe(1997);                                // Preço Original
+    expect(row[29]).toBe('19,97');                             // Preço Original (cents → BRL)
     expect(row[30]).toBe('credit_card');                       // Tipo Pagamento
     expect(row[31]).toBe('corr-1');                            // execution
   });
