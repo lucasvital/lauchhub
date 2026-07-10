@@ -3,10 +3,31 @@
  *
  * Kiwify sends monetary amounts in **cents** (integers): `6700` means
  * R$ 67,00. Uploading that raw makes a R$ 67 sale look like 6.700 in the
- * spreadsheet. `formatCentsBRL` converts cents → Brazilian decimal notation
- * with a comma decimal separator and dot thousands separator (e.g.
- * `199700` → `"1.997,00"`), which a pt-BR Google Sheet reads back as a number.
+ * spreadsheet.
+ *
+ * Two helpers, for two different destinations:
+ *
+ * - `centsToReais` returns a real **number** in reais (`6700` → `67`,
+ *   `3366` → `33.66`). Use this for Google Sheets: writing an actual number
+ *   is locale-unambiguous, keeps the cell summable, and lets the sheet's own
+ *   pt-BR formatting render the comma. Sending a formatted *string* instead
+ *   forces the sheet to re-parse it per column locale, which is how the same
+ *   value ends up shown as both `3.366,00` and `33.66` in different columns.
+ * - `formatCentsBRL` returns a pt-BR **string** (`6700` → `"67,00"`). Use it
+ *   for plain-text destinations (e.g. WhatsApp template params) where there is
+ *   no cell to hold a number.
  */
+
+/**
+ * Convert an amount in cents to a numeric value in reais.
+ *
+ * - `null`/`undefined`/non-finite → `''` (preserves the "empty cell" behavior).
+ * - `6700` → `67`, `3366` → `33.66`, `-6700` → `-67`.
+ */
+export function centsToReais(cents: number | null | undefined): number | '' {
+  if (cents == null || !Number.isFinite(cents)) return '';
+  return Math.round(cents) / 100;
+}
 
 /**
  * Convert an amount in cents to a BRL-formatted string ("67,00", "1.997,00").
