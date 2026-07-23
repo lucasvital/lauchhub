@@ -2,6 +2,7 @@ import { Worker, type Job } from 'bullmq';
 import { FatalError } from '../integrations/_shared/errors.js';
 import { appendRow as defaultAppendRow } from '../integrations/sheets/client.js';
 import { formatCentsBRL } from '../shared/currency.js';
+import { formatSaoPaulo } from '../shared/datetime.js';
 import { logger } from '../shared/logger.js';
 import type { WebhookJob } from '../types/job.js';
 
@@ -27,7 +28,7 @@ export function buildRow(job: WebhookJob): (string | number | null)[] {
   const u = job.utm;
   return [
     /*  1 ID                    */ o.id,
-    /*  2 Data Criação          */ job.received_at,
+    /*  2 Data Criação          */ formatSaoPaulo(job.received_at), // São Paulo local time
     /*  3 Evento                */ job.event,
     /*  4 Nome                  */ c.name,
     /*  5 E-mail                */ c.email ?? '',
