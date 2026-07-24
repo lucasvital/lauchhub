@@ -121,8 +121,11 @@ export const SHEETS_HEADER = [
   'execution',
 ] as const;
 
-const HEADER_RANGE_COLUMNS = 'A:AF'; // A..AF = 32 cols
 const HEADER_RANGE_ROW1 = 'A1:AF1';
+
+// Cache: `${spreadsheetId}::${tabTitle}` → numeric sheetId. Stable per title;
+// used by appendCells (which needs the grid id, not the A1 range).
+const sheetIdCache = new Map<string, number>();
 
 function escapeTab(tab: string): string {
   // Sheet names with spaces / special chars must be wrapped in single quotes.
@@ -160,18 +163,76 @@ export interface AppendInput {
   row: (string | number | null)[];
 }
 
+/**
+ * Resolve a tab title → numeric sheetId (needed by the grid `appendCells` API).
+ * Caches every tab of the spreadsheet on first lookup.
+ */
+async function resolveSheetId(
+  client: sheets_v4.Sheets,
+  spreadsheetId: string,
+  tab: string,
+): Promise<number> {
+  const cacheKey = `${spreadsheetId}::${tab}`;
+  const cached = sheetIdCache.get(cacheKey);
+  if (cached != null) return cached;
+
+  try {
+    const r = await client.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(sheetId,title))',
+    });
+    for (const s of r.data.sheets ?? []) {
+      const title = s.properties?.title;
+      const id = s.properties?.sheetId;
+      if (title != null && id != null) sheetIdCache.set(`${spreadsheetId}::${title}`, id);
+    }
+  } catch (err) {
+    const status = (err as { code?: number }).code;
+    if (typeof status === 'number') throw classifyHttpError(status, err);
+    throw new TransientError(`Sheets resolveSheetId error: ${String(err)}`, 'network');
+  }
+
+  const resolved = sheetIdCache.get(cacheKey);
+  if (resolved == null) {
+    throw new FatalError(`Tab "${tab}" not found in spreadsheet`, 'no_tab');
+  }
+  return resolved;
+}
+
+/**
+ * Map a cell value to a Google Sheets CellData. Numbers stay numeric; strings
+ * (including all-digit ids like phones / product codes) stay text — no silent
+ * coercion. null / '' become blank cells.
+ */
+function toCellData(v: string | number | null): sheets_v4.Schema$CellData {
+  if (v == null || v === '') return {};
+  if (typeof v === 'number') return { userEnteredValue: { numberValue: v } };
+  return { userEnteredValue: { stringValue: String(v) } };
+}
+
 export async function appendRow(input: AppendInput): Promise<void> {
   const client = await getClient();
   await ensureHeader(client, input.spreadsheetId, input.tab);
+  const sheetId = await resolveSheetId(client, input.spreadsheetId, input.tab);
 
-  const range = `${escapeTab(input.tab)}!${HEADER_RANGE_COLUMNS}`;
+  // `appendCells` appends after the last data row of the sheet, ALWAYS starting
+  // at column A. Unlike `values.append`, it does not "guess" a table origin —
+  // which is what let rows drift into column AA on tabs with stray far-right
+  // data (the old n8n columns). Single atomic request → no read-modify race.
   try {
-    await client.spreadsheets.values.append({
+    await client.spreadsheets.batchUpdate({
       spreadsheetId: input.spreadsheetId,
-      range,
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: [input.row.map((v) => v ?? '')] },
+      requestBody: {
+        requests: [
+          {
+            appendCells: {
+              sheetId,
+              fields: 'userEnteredValue',
+              rows: [{ values: input.row.map(toCellData) }],
+            },
+          },
+        ],
+      },
     });
   } catch (err) {
     const status = (err as { code?: number }).code;
