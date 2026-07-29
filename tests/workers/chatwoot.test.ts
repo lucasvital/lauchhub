@@ -53,6 +53,7 @@ function makeJob(overrides: { eventCfg?: Partial<ChatwootEventConfig>; email?: s
 function makeAdapter() {
   return {
     searchByPhone: vi.fn(),
+    searchByEmail: vi.fn().mockResolvedValue(null),
     createContact: vi.fn(),
     getLabels: vi.fn().mockResolvedValue([]),
     setLabels: vi.fn().mockResolvedValue(undefined),
@@ -96,6 +97,38 @@ describe('processChatwootJob — create + add labels', () => {
     // New contact has no prior labels — setLabels called with labels_add
     expect(adapter.getLabels).not.toHaveBeenCalled();
     expect(adapter.setLabels).toHaveBeenCalledWith(cfg, 42, ['aluno', 'cx']);
+  });
+
+  it('reuses existing contact (as not-new) when create hits a 422 email conflict', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue(null); // phone search misses
+    adapter.searchByEmail
+      .mockResolvedValueOnce(null) // pre-create lookup misses
+      .mockResolvedValueOnce({ id: 8 }); // post-422 lookup hits
+    adapter.createContact.mockRejectedValue(
+      new FatalError('HTTP 422: {"message":"Email has already been taken"}', 'http_422'),
+    );
+    adapter.getLabels.mockResolvedValue(['vip']);
+
+    await processChatwootJob(makeJob({ eventCfg: { labels_add: ['aluno'] } }), adapter);
+
+    // Treated as existing → labels are fetched and merged (not overwritten)
+    expect(adapter.getLabels).toHaveBeenCalledWith(cfg, 8);
+    const args = adapter.setLabels.mock.calls[0];
+    expect(args[1]).toBe(8);
+    expect(new Set(args[2])).toEqual(new Set(['vip', 'aluno']));
+  });
+
+  it('finds contact by email when phone search misses (no create)', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue(null);
+    adapter.searchByEmail.mockResolvedValue({ id: 21 });
+    adapter.getLabels.mockResolvedValue([]);
+
+    await processChatwootJob(makeJob({ eventCfg: { labels_add: ['aluno'] } }), adapter);
+
+    expect(adapter.createContact).not.toHaveBeenCalled();
+    expect(adapter.setLabels).toHaveBeenCalledWith(cfg, 21, ['aluno']);
   });
 
   it('uses existing contact + merges labels_add with current', async () => {

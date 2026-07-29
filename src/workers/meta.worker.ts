@@ -5,6 +5,7 @@ import {
   createContact,
   createConversation,
   listInboxTemplates,
+  searchByEmail,
   searchByPhone,
   sendTemplateMessage,
   type ChatwootConfig,
@@ -18,6 +19,7 @@ const log = logger.child({ worker: 'meta' });
 
 export interface MetaAdapter {
   searchByPhone: typeof searchByPhone;
+  searchByEmail: typeof searchByEmail;
   createContact: typeof createContact;
   createConversation: typeof createConversation;
   listInboxTemplates: typeof listInboxTemplates;
@@ -26,6 +28,7 @@ export interface MetaAdapter {
 
 const defaultAdapter: MetaAdapter = {
   searchByPhone,
+  searchByEmail,
   createContact,
   createConversation,
   listInboxTemplates,
@@ -120,14 +123,29 @@ export async function processMetaJob(
   const renderedContent = renderTemplateBody(findBodyText(template), processedParams);
 
   // Find or create the contact in Chatwoot, then open a fresh conversation.
+  // Look up by phone first, then by email — the person may already exist under
+  // this email with a different/absent phone.
   let contact = await adapter.searchByPhone(cfg, phone);
+  if (!contact && job.contact.email) {
+    contact = await adapter.searchByEmail(cfg, job.contact.email);
+  }
   if (!contact) {
-    contact = await adapter.createContact(cfg, {
-      name: job.contact.name,
-      email: job.contact.email,
-      phone_number: phoneE164,
-      inbox_id: inboxId,
-    });
+    try {
+      contact = await adapter.createContact(cfg, {
+        name: job.contact.name,
+        email: job.contact.email,
+        phone_number: phoneE164,
+        inbox_id: inboxId,
+      });
+    } catch (err) {
+      // Chatwoot rejects a duplicate email with 422 ("Email has already been
+      // taken"). The contact exists but the phone search missed it — reuse it.
+      if (err instanceof FatalError && err.code === 'http_422' && job.contact.email) {
+        contact = await adapter.searchByEmail(cfg, job.contact.email);
+        if (contact) jobLog.info({ contact_id: contact.id }, 'meta_contact_reused_after_email_conflict');
+      }
+      if (!contact) throw err;
+    }
   }
 
   // Chatwoot's WhatsApp inbox validates source_id against ^\d{1,20}(-\d{1,20})?$

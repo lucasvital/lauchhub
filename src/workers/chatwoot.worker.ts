@@ -4,6 +4,7 @@ import { normalizePhone } from '../integrations/_shared/phone.js';
 import {
   createContact,
   getLabels,
+  searchByEmail,
   searchByPhone,
   setLabels,
   type ChatwootConfig,
@@ -15,12 +16,19 @@ const log = logger.child({ worker: 'chatwoot' });
 
 export interface ChatwootAdapter {
   searchByPhone: typeof searchByPhone;
+  searchByEmail: typeof searchByEmail;
   createContact: typeof createContact;
   getLabels: typeof getLabels;
   setLabels: typeof setLabels;
 }
 
-const defaultAdapter: ChatwootAdapter = { searchByPhone, createContact, getLabels, setLabels };
+const defaultAdapter: ChatwootAdapter = {
+  searchByPhone,
+  searchByEmail,
+  createContact,
+  getLabels,
+  setLabels,
+};
 
 function resolveConfig(job: WebhookJob): ChatwootConfig {
   const { chatwoot_url, chatwoot_token, chatwoot_account_id } = job.config;
@@ -86,15 +94,28 @@ export async function processChatwootJob(
   }
 
   let contact = phone ? await adapter.searchByPhone(cfg, phone) : null;
+  if (!contact && job.contact.email) {
+    contact = await adapter.searchByEmail(cfg, job.contact.email);
+  }
   let created = false;
   if (!contact) {
-    contact = await adapter.createContact(cfg, {
-      name: job.contact.name,
-      email: job.contact.email,
-      phone_number: phone ? `+${phone}` : null,
-      inbox_id: job.config.chatwoot_inbox_id ?? null,
-    });
-    created = true;
+    try {
+      contact = await adapter.createContact(cfg, {
+        name: job.contact.name,
+        email: job.contact.email,
+        phone_number: phone ? `+${phone}` : null,
+        inbox_id: job.config.chatwoot_inbox_id ?? null,
+      });
+      created = true;
+    } catch (err) {
+      // Duplicate email → 422. The contact exists but the phone search missed
+      // it (created earlier with a different/absent phone) — reuse it.
+      if (err instanceof FatalError && err.code === 'http_422' && job.contact.email) {
+        contact = await adapter.searchByEmail(cfg, job.contact.email);
+        if (contact) jobLog.info({ contact_id: contact.id }, 'chatwoot_contact_reused_after_email_conflict');
+      }
+      if (!contact) throw err;
+    }
   }
 
   // Skip check (only meaningful for existing contacts — new ones have no labels)

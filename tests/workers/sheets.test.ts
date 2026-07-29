@@ -55,7 +55,7 @@ describe('sheets buildRow', () => {
   it('maps each column from the right source', () => {
     const row = buildRow(sampleJob);
     expect(row[0]).toBe('ord-1');                              // ID
-    expect(row[1]).toBe('2026-05-14T18:00:00.000Z');           // Data Criação
+    expect(row[1]).toBe('2026-05-14 15:00:00');                // Data Criação (São Paulo, UTC-3)
     expect(row[2]).toBe('compra_aprovada');                    // Evento
     expect(row[3]).toBe('João Silva');                         // Nome
     expect(row[4]).toBe('j@x.com');                            // E-mail

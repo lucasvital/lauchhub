@@ -34,6 +34,22 @@ describe('normalizePhone', () => {
     expect(normalizePhone('55999998888')).toBe('5555999998888');
   });
 
+  it('accepts an explicitly-international E.164 number (Portugal, +351)', () => {
+    // Carla: "+351914998189" is a valid non-BR WhatsApp number.
+    expect(normalizePhone('+351914998189')).toBe('351914998189');
+  });
+
+  it('still collapses a duplicated BR DDI even with a leading "+"', () => {
+    // "+" must NOT short-circuit BR normalization for 55-prefixed numbers.
+    expect(normalizePhone('+555548991908899')).toBe('5548991908899');
+    expect(normalizePhone('+555541988360081')).toBe('5541988360081');
+  });
+
+  it('rejects a foreign-looking number without a "+" (cannot guess country)', () => {
+    // No "+" → BR rules apply → 12-digit non-55 core is not valid.
+    expect(normalizePhone('351914998189')).toBeNull();
+  });
+
   it('returns null for empty / non-phone input', () => {
     expect(normalizePhone('')).toBeNull();
     expect(normalizePhone(null)).toBeNull();
