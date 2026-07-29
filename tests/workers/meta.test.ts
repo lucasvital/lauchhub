@@ -68,6 +68,7 @@ const sampleTemplate = {
 function makeAdapter() {
   return {
     searchByPhone: vi.fn(),
+    searchByEmail: vi.fn().mockResolvedValue(null),
     createContact: vi.fn(),
     createConversation: vi.fn().mockResolvedValue({ id: 99, inbox_id: 14 }),
     listInboxTemplates: vi.fn().mockResolvedValue([sampleTemplate]),
@@ -117,6 +118,50 @@ describe('processMetaJob — template send via Chatwoot', () => {
       cfg,
       expect.objectContaining({ contact_id: 42 }),
     );
+  });
+
+  it('reuses existing contact when createContact hits a 422 email conflict', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue(null); // phone search misses
+    adapter.searchByEmail
+      .mockResolvedValueOnce(null) // pre-create lookup misses (fuzzy index lag)
+      .mockResolvedValueOnce({ id: 55, email: 'j@x.com' }); // post-422 lookup hits
+    adapter.createContact.mockRejectedValue(
+      new FatalError('HTTP 422: {"message":"Email has already been taken"}', 'http_422'),
+    );
+
+    const r = await processMetaJob(makeJob(), adapter);
+
+    expect(adapter.searchByEmail).toHaveBeenCalledWith(cfg, 'j@x.com');
+    expect(adapter.createConversation).toHaveBeenCalledWith(
+      cfg,
+      expect.objectContaining({ contact_id: 55 }),
+    );
+    expect(r).toEqual({ messageId: 12345 });
+  });
+
+  it('finds existing contact by email when phone search misses (no create)', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue(null);
+    adapter.searchByEmail.mockResolvedValue({ id: 77, email: 'j@x.com' });
+
+    await processMetaJob(makeJob(), adapter);
+
+    expect(adapter.createContact).not.toHaveBeenCalled();
+    expect(adapter.createConversation).toHaveBeenCalledWith(
+      cfg,
+      expect.objectContaining({ contact_id: 77 }),
+    );
+  });
+
+  it('rethrows the 422 when the contact still cannot be found by email', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue(null);
+    adapter.searchByEmail.mockResolvedValue(null); // never resolves the contact
+    adapter.createContact.mockRejectedValue(
+      new FatalError('HTTP 422: {"message":"Email has already been taken"}', 'http_422'),
+    );
+    await expect(processMetaJob(makeJob(), adapter)).rejects.toBeInstanceOf(FatalError);
   });
 
   it('skips silently when no template configured', async () => {

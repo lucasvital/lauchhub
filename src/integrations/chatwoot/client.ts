@@ -76,6 +76,26 @@ export async function searchByPhone(
   return list[0] ?? null;
 }
 
+/**
+ * Find a contact by email. Chatwoot enforces email uniqueness per account, so
+ * this is the fallback identifier when a phone search misses (e.g. the person
+ * was created earlier with a different/absent phone). The `q` search is fuzzy,
+ * so we return only an exact (case-insensitive) email match to avoid grabbing
+ * the wrong person.
+ */
+export async function searchByEmail(
+  cfg: ChatwootConfig,
+  email: string,
+): Promise<ChatwootContact | null> {
+  const { body } = await http(
+    cfg,
+    `/api/v1/accounts/${cfg.accountId}/contacts/search?q=${encodeURIComponent(email)}&include=contact_inboxes`,
+  );
+  const list = (body as SearchResult).payload ?? [];
+  const target = email.trim().toLowerCase();
+  return list.find((c) => (c.email ?? '').trim().toLowerCase() === target) ?? null;
+}
+
 export interface CreateContactInput {
   name: string;
   email?: string | null;
