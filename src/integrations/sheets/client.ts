@@ -241,6 +241,104 @@ export async function appendRow(input: AppendInput): Promise<void> {
   }
 }
 
+// Column indexes (0-based, into the A:AF row) used by the refund lookup.
+// Must stay in sync with SHEETS_HEADER / buildRow.
+const COL_EVENT = 2; //  C — Evento
+const COL_EMAIL = 4; //  E — E-mail
+const COL_PRODUCT_ID = 10; // K — ID do produto
+const COL_PRODUCT_NAME = 14; // O — Produto
+
+// Event/status labels that mean a row is already refunded.
+const REFUNDED_LABELS = new Set(['refunded', 'compra_reembolsada']);
+
+export interface FindPurchaseInput {
+  spreadsheetId: string;
+  tab: string;
+  email: string;
+  productId?: string | null;
+  productName?: string | null;
+}
+
+export interface FindPurchaseResult {
+  /** 1-based sheet row of the most recent approved purchase to mark, or null. */
+  rowNumber: number | null;
+  /** True if a matching row is already flagged refunded (idempotency signal). */
+  alreadyRefunded: boolean;
+}
+
+/**
+ * Locate the buyer's approved-purchase row by email + product, so a later
+ * refund/chargeback can flip its status. Matches on email (exact, case-
+ * insensitive) AND product (product_id preferred, else product_name). Only
+ * rows whose Evento is `compra_aprovada` are eligible; the most recent one
+ * wins. Rows already marked refunded set `alreadyRefunded` instead.
+ */
+export async function findPurchaseRow(input: FindPurchaseInput): Promise<FindPurchaseResult> {
+  const client = await getClient();
+  const range = `${escapeTab(input.tab)}!A:AF`;
+  let rows: string[][];
+  try {
+    const r = await client.spreadsheets.values.get({ spreadsheetId: input.spreadsheetId, range });
+    rows = (r.data.values ?? []) as string[][];
+  } catch (err) {
+    const status = (err as { code?: number }).code;
+    if (typeof status === 'number') throw classifyHttpError(status, err);
+    throw new TransientError(`Sheets findPurchaseRow error: ${String(err)}`, 'network');
+  }
+
+  const targetEmail = input.email.trim().toLowerCase();
+  const pid = input.productId?.trim() || null;
+  const pname = input.productName?.trim().toLowerCase() || null;
+
+  let rowNumber: number | null = null;
+  let alreadyRefunded = false;
+
+  // Skip header (row 0). Sheet rows are 1-based → array index i is sheet row i+1.
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    if ((row[COL_EMAIL] ?? '').trim().toLowerCase() !== targetEmail) continue;
+
+    const rowPid = (row[COL_PRODUCT_ID] ?? '').trim();
+    const rowPname = (row[COL_PRODUCT_NAME] ?? '').trim().toLowerCase();
+    const productMatch = (pid !== null && rowPid === pid) || (pname !== null && rowPname === pname);
+    if (!productMatch) continue;
+
+    const event = (row[COL_EVENT] ?? '').trim().toLowerCase();
+    if (REFUNDED_LABELS.has(event)) {
+      alreadyRefunded = true;
+      continue;
+    }
+    if (event === 'compra_aprovada') rowNumber = i + 1; // last approved purchase wins
+  }
+
+  return { rowNumber, alreadyRefunded };
+}
+
+export interface UpdateEventInput {
+  spreadsheetId: string;
+  tab: string;
+  rowNumber: number;
+  value: string;
+}
+
+/** Overwrite the Evento cell (column C) of a specific row. */
+export async function updateEventCell(input: UpdateEventInput): Promise<void> {
+  const client = await getClient();
+  const range = `${escapeTab(input.tab)}!C${input.rowNumber}`;
+  try {
+    await client.spreadsheets.values.update({
+      spreadsheetId: input.spreadsheetId,
+      range,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[input.value]] },
+    });
+  } catch (err) {
+    const status = (err as { code?: number }).code;
+    if (typeof status === 'number') throw classifyHttpError(status, err);
+    throw new TransientError(`Sheets updateEventCell error: ${String(err)}`, 'network');
+  }
+}
+
 export interface SheetTab {
   /** Stable internal id (sheetId). Use as key, but display `title`. */
   id: number;

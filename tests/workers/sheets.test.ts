@@ -126,11 +126,19 @@ describe('sheets buildRow', () => {
   });
 });
 
+function makeDeps() {
+  return {
+    append: vi.fn().mockResolvedValue(undefined),
+    findPurchaseRow: vi.fn().mockResolvedValue({ rowNumber: null, alreadyRefunded: false }),
+    updateEvent: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe('processSheetsJob', () => {
   it('calls appender with spreadsheetId + tab + row', async () => {
-    const append = vi.fn().mockResolvedValue(undefined);
-    await processSheetsJob(sampleJob, append);
-    expect(append).toHaveBeenCalledWith({
+    const deps = makeDeps();
+    await processSheetsJob(sampleJob, deps);
+    expect(deps.append).toHaveBeenCalledWith({
       spreadsheetId: 'sheet-abc',
       tab: 'vendas-2026',
       row: expect.any(Array),
@@ -138,23 +146,85 @@ describe('processSheetsJob', () => {
   });
 
   it('falls back to default tab "vendas" when sheets_tab is null', async () => {
-    const append = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps();
     const j = { ...sampleJob, config: { ...sampleJob.config, sheets_tab: null } };
-    await processSheetsJob(j, append);
-    expect(append).toHaveBeenCalledWith(
-      expect.objectContaining({ tab: 'vendas' }),
-    );
+    await processSheetsJob(j, deps);
+    expect(deps.append).toHaveBeenCalledWith(expect.objectContaining({ tab: 'vendas' }));
   });
 
   it('throws FatalError when sheets_id is missing', async () => {
-    const append = vi.fn();
+    const deps = makeDeps();
     const j = { ...sampleJob, config: { sheets_id: null, sheets_tab: 'vendas' } };
-    await expect(processSheetsJob(j, append)).rejects.toBeInstanceOf(FatalError);
-    expect(append).not.toHaveBeenCalled();
+    await expect(processSheetsJob(j, deps)).rejects.toBeInstanceOf(FatalError);
+    expect(deps.append).not.toHaveBeenCalled();
   });
 
   it('propagates appender errors (BullMQ retries based on error type)', async () => {
-    const append = vi.fn().mockRejectedValue(new Error('quota'));
-    await expect(processSheetsJob(sampleJob, append)).rejects.toThrow('quota');
+    const deps = makeDeps();
+    deps.append.mockRejectedValue(new Error('quota'));
+    await expect(processSheetsJob(sampleJob, deps)).rejects.toThrow('quota');
+  });
+});
+
+describe('processSheetsJob — refund/chargeback', () => {
+  const refundJob: WebhookJob = {
+    ...sampleJob,
+    event: 'compra_reembolsada',
+    order: { ...sampleJob.order, product_id: 'kw-prod-1', product_name: 'Imersão' },
+  };
+
+  it('marks the matched purchase row as refunded (no append)', async () => {
+    const deps = makeDeps();
+    deps.findPurchaseRow.mockResolvedValue({ rowNumber: 42, alreadyRefunded: false });
+
+    await processSheetsJob(refundJob, deps);
+
+    expect(deps.findPurchaseRow).toHaveBeenCalledWith({
+      spreadsheetId: 'sheet-abc',
+      tab: 'vendas-2026',
+      email: 'j@x.com',
+      productId: 'kw-prod-1',
+      productName: 'Imersão',
+    });
+    expect(deps.updateEvent).toHaveBeenCalledWith({
+      spreadsheetId: 'sheet-abc',
+      tab: 'vendas-2026',
+      rowNumber: 42,
+      value: 'refunded',
+    });
+    expect(deps.append).not.toHaveBeenCalled();
+  });
+
+  it('appends a refund row (Evento=refunded) when no purchase matches', async () => {
+    const deps = makeDeps();
+    deps.findPurchaseRow.mockResolvedValue({ rowNumber: null, alreadyRefunded: false });
+
+    await processSheetsJob(refundJob, deps);
+
+    expect(deps.updateEvent).not.toHaveBeenCalled();
+    expect(deps.append).toHaveBeenCalledTimes(1);
+    const appended = deps.append.mock.calls[0][0].row;
+    expect(appended[2]).toBe('refunded'); // Evento column
+  });
+
+  it('is a no-op when the purchase is already refunded', async () => {
+    const deps = makeDeps();
+    deps.findPurchaseRow.mockResolvedValue({ rowNumber: null, alreadyRefunded: true });
+
+    await processSheetsJob(refundJob, deps);
+
+    expect(deps.updateEvent).not.toHaveBeenCalled();
+    expect(deps.append).not.toHaveBeenCalled();
+  });
+
+  it('appends a refund row when the contact has no email to match on', async () => {
+    const deps = makeDeps();
+    const j = { ...refundJob, contact: { ...refundJob.contact, email: null } };
+
+    await processSheetsJob(j, deps);
+
+    expect(deps.findPurchaseRow).not.toHaveBeenCalled();
+    expect(deps.append).toHaveBeenCalledTimes(1);
+    expect(deps.append.mock.calls[0][0].row[2]).toBe('refunded');
   });
 });

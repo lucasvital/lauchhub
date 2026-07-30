@@ -81,6 +81,9 @@ export function detectEvent(payload: KiwifyPayload): EventId | null {
     case 'refused':
       return 'compra_recusada';
     case 'refunded':
+    // Chargeback is treated the same as a refund — both flip the sale's status.
+    case 'chargedback':
+    case 'chargeback':
       return 'compra_reembolsada';
     default:
       return null;
