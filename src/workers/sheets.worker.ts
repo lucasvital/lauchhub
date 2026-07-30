@@ -1,10 +1,18 @@
 import { Worker, type Job } from 'bullmq';
+import type { Logger } from 'pino';
 import { FatalError } from '../integrations/_shared/errors.js';
-import { appendRow as defaultAppendRow } from '../integrations/sheets/client.js';
+import {
+  appendRow as defaultAppendRow,
+  findPurchaseRow as defaultFindPurchaseRow,
+  updateEventCell as defaultUpdateEventCell,
+  type FindPurchaseInput,
+  type FindPurchaseResult,
+  type UpdateEventInput,
+} from '../integrations/sheets/client.js';
 import { formatCentsBRL } from '../shared/currency.js';
 import { formatSaoPaulo } from '../shared/datetime.js';
 import { logger } from '../shared/logger.js';
-import type { WebhookJob } from '../types/job.js';
+import type { EventId, WebhookJob } from '../types/job.js';
 
 const log = logger.child({ worker: 'sheets' });
 
@@ -14,7 +22,28 @@ export type SheetsAppendFn = (input: {
   row: (string | number | null)[];
 }) => Promise<void>;
 
+/**
+ * Injectable Sheets operations (append / find / update). Real implementations
+ * hit Google Sheets; tests pass fakes.
+ */
+export interface SheetsDeps {
+  append: SheetsAppendFn;
+  findPurchaseRow: (input: FindPurchaseInput) => Promise<FindPurchaseResult>;
+  updateEvent: (input: UpdateEventInput) => Promise<void>;
+}
+
+const defaultDeps: SheetsDeps = {
+  append: defaultAppendRow,
+  findPurchaseRow: defaultFindPurchaseRow,
+  updateEvent: defaultUpdateEventCell,
+};
+
 const DEFAULT_TAB = 'vendas';
+
+// Events that mark an existing purchase as refunded instead of appending.
+const REFUND_EVENTS: ReadonlySet<EventId> = new Set(['compra_reembolsada']);
+// Value written into the Evento column when a purchase is refunded.
+const REFUNDED_LABEL = 'refunded';
 
 /**
  * Build the 32-column row in the canonical column order defined in
@@ -64,7 +93,7 @@ export function buildRow(job: WebhookJob): (string | number | null)[] {
 
 export async function processSheetsJob(
   job: WebhookJob,
-  append: SheetsAppendFn = defaultAppendRow,
+  deps: SheetsDeps = defaultDeps,
 ): Promise<void> {
   const jobLog = log.child({
     correlation_id: job.correlation_id,
@@ -75,10 +104,58 @@ export async function processSheetsJob(
     jobLog.error('sheets_job_no_spreadsheet');
     throw new FatalError('Campaign has no sheets_id configured', 'no_spreadsheet');
   }
+  const spreadsheetId = job.config.sheets_id;
   const tab = job.config.sheets_tab ?? DEFAULT_TAB;
-  jobLog.info({ spreadsheet_id: job.config.sheets_id, tab }, 'sheets_job_start');
-  await append({ spreadsheetId: job.config.sheets_id, tab, row: buildRow(job) });
-  jobLog.info({ spreadsheet_id: job.config.sheets_id, tab }, 'sheets_job_done');
+  jobLog.info({ spreadsheet_id: spreadsheetId, tab }, 'sheets_job_start');
+
+  if (REFUND_EVENTS.has(job.event)) {
+    await processRefund(job, spreadsheetId, tab, deps, jobLog);
+    return;
+  }
+
+  await deps.append({ spreadsheetId, tab, row: buildRow(job) });
+  jobLog.info({ spreadsheet_id: spreadsheetId, tab }, 'sheets_job_done');
+}
+
+/**
+ * Refund/chargeback: find the buyer's approved-purchase row (email + product)
+ * and flip its Evento to `refunded`. If no matching purchase is found, append
+ * a refund row (also flagged refunded) so the event is never lost.
+ */
+async function processRefund(
+  job: WebhookJob,
+  spreadsheetId: string,
+  tab: string,
+  deps: SheetsDeps,
+  jobLog: Logger,
+): Promise<void> {
+  const email = job.contact.email;
+
+  if (email) {
+    const found = await deps.findPurchaseRow({
+      spreadsheetId,
+      tab,
+      email,
+      productId: job.order.product_id,
+      productName: job.order.product_name,
+    });
+
+    if (found.rowNumber != null) {
+      await deps.updateEvent({ spreadsheetId, tab, rowNumber: found.rowNumber, value: REFUNDED_LABEL });
+      jobLog.info({ row: found.rowNumber, email }, 'sheets_refund_marked');
+      return;
+    }
+    if (found.alreadyRefunded) {
+      jobLog.info({ email }, 'sheets_refund_already_marked');
+      return;
+    }
+  }
+
+  // No email, or no matching purchase → append a refund row so it isn't lost.
+  const row = buildRow(job);
+  row[2] = REFUNDED_LABEL; // Evento column
+  await deps.append({ spreadsheetId, tab, row });
+  jobLog.info({ email }, 'sheets_refund_appended_no_match');
 }
 
 /**
@@ -87,12 +164,12 @@ export async function processSheetsJob(
  * triggering Redis side effects at module load.
  */
 export async function startSheetsWorker(
-  append: SheetsAppendFn = defaultAppendRow,
+  deps: SheetsDeps = defaultDeps,
 ): Promise<Worker<WebhookJob>> {
   const { connection, QUEUE_NAMES } = await import('../queue/index.js');
   return new Worker<WebhookJob>(
     QUEUE_NAMES.sheets,
-    async (bullJob: Job<WebhookJob>) => processSheetsJob(bullJob.data, append),
+    async (bullJob: Job<WebhookJob>) => processSheetsJob(bullJob.data, deps),
     { connection, concurrency: 5 },
   );
 }

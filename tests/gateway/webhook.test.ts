@@ -233,6 +233,9 @@ describe('detectEvent', () => {
     expect(detectEvent({ order_status: 'billet_generated' })).toBe('boleto_gerado');
     expect(detectEvent({ order_status: 'refused' })).toBe('compra_recusada');
     expect(detectEvent({ order_status: 'refunded' })).toBe('compra_reembolsada');
+    // Chargeback is treated as a refund
+    expect(detectEvent({ order_status: 'chargedback' })).toBe('compra_reembolsada');
+    expect(detectEvent({ order_status: 'chargeback' })).toBe('compra_reembolsada');
     expect(detectEvent({ webhook_event_type: 'subscription_canceled' })).toBe('subscription_canceled');
     expect(detectEvent({ webhook_event_type: 'subscription_renewed' })).toBe('subscription_renewed');
     expect(detectEvent({ order_status: 'whatever' })).toBeNull();
