@@ -29,16 +29,18 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
 
       log.info({ event: 'webhook_received' });
 
-      // Lightweight summary extracted for the received-webhooks panel view.
+      // Lightweight summary for the received-webhooks panel view. Falls back to
+      // the flat abandoned-cart fields (email/name/product_name at top level).
       const customer = payload.Customer ?? {};
       const summary = {
-        contact_name: customer.full_name ?? customer.name ?? null,
-        contact_email: customer.email ?? null,
+        contact_name: customer.full_name ?? customer.name ?? payload.name ?? null,
+        contact_email: customer.email ?? payload.email ?? null,
         product_name:
           payload.Products?.[0]?.name ??
           payload.Products?.[0]?.product_name ??
           payload.Product?.product_name ??
           payload.Product?.name ??
+          payload.product_name ??
           null,
       };
 
@@ -52,8 +54,14 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
       };
 
       try {
-        // Light validation: payload must have *some* customer identifier
-        const hasContact = !!(payload.Customer?.email || payload.Customer?.mobile);
+        // Light validation: payload must have *some* customer identifier.
+        // Accept both the nested purchase shape and the flat abandoned-cart shape.
+        const hasContact = !!(
+          payload.Customer?.email ||
+          payload.Customer?.mobile ||
+          payload.email ||
+          payload.phone
+        );
         if (!hasContact) {
           log.warn({ event: 'validation_failed', reason: 'no contact identifier' });
           record({ outcome: 'no_contact' });
