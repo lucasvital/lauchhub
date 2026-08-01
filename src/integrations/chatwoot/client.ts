@@ -1,4 +1,5 @@
 import { FatalError, TransientError, classifyHttpError } from '../_shared/errors.js';
+import { normalizePhone } from '../_shared/phone.js';
 import { logger } from '../../shared/logger.js';
 
 /**
@@ -73,7 +74,13 @@ export async function searchByPhone(
     `/api/v1/accounts/${cfg.accountId}/contacts/search?q=${encodeURIComponent(phone)}&include=contact_inboxes`,
   );
   const list = (body as SearchResult).payload ?? [];
-  return list[0] ?? null;
+  // Chatwoot's search is a fuzzy substring match, so a query "5535991891712"
+  // also returns a contact stored as "25535991891712" (a superstring — e.g. a
+  // typo'd/duplicate number). Reusing that contact would send the WhatsApp to
+  // the wrong number, so only accept an EXACT normalized-phone match.
+  const target = normalizePhone(phone) ?? phone;
+  const match = list.find((c) => normalizePhone(c.phone_number) === target);
+  return match ?? null;
 }
 
 /**
