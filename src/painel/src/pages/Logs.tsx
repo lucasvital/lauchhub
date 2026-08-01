@@ -36,6 +36,42 @@ interface UnmatchedItem {
   created_at: string;
 }
 
+interface WebhookItem {
+  id: string;
+  token: string | null;
+  event: string | null;
+  campaign_token: string | null;
+  outcome: string;
+  workers: string[] | null;
+  jobs_enqueued: number;
+  contact_name: string | null;
+  contact_email: string | null;
+  product_name: string | null;
+  payload: unknown;
+  created_at: string;
+}
+
+const OUTCOME_META: Record<string, { label: string; color: 'green' | 'amber' | 'red' | 'cyan' | 'purple' }> = {
+  enqueued: { label: 'PROCESSADO', color: 'green' },
+  no_workers_enabled: { label: 'SEM WORKER ATIVO', color: 'amber' },
+  unmatched: { label: 'SEM CAMPANHA', color: 'amber' },
+  inactive: { label: 'CAMPANHA PAUSADA', color: 'purple' },
+  unrecognized_event: { label: 'EVENTO DESCONHECIDO', color: 'cyan' },
+  no_contact: { label: 'SEM CONTATO', color: 'red' },
+  error: { label: 'ERRO INTERNO', color: 'red' },
+};
+
+const OUTCOME_FILTERS: { id: string; label: string }[] = [
+  { id: 'all', label: 'todos' },
+  { id: 'enqueued', label: 'Processados' },
+  { id: 'no_workers_enabled', label: 'Sem worker ativo' },
+  { id: 'unmatched', label: 'Sem campanha' },
+  { id: 'inactive', label: 'Campanha pausada' },
+  { id: 'unrecognized_event', label: 'Evento desconhecido' },
+  { id: 'no_contact', label: 'Sem contato' },
+  { id: 'error', label: 'Erro interno' },
+];
+
 /**
  * Match Kiwify raw event tokens (e.g. "abandoned_cart", "pix.generated") to
  * our canonical EventId. Used to filter unmatched events whose payload
@@ -62,10 +98,11 @@ function timeAgo(ts: number | string): string {
 
 export function LogsPage() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'dlq' | 'unmatched'>('dlq');
+  const [tab, setTab] = useState<'received' | 'dlq' | 'unmatched'>('received');
   const [query, setQuery] = useState('');
   const [workerFilter, setWorkerFilter] = useState<WorkerId | 'all'>('all');
   const [eventFilter, setEventFilter] = useState<EventId | 'all'>('all');
+  const [outcomeFilter, setOutcomeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
 
   const dateCutoff = useMemo(() => {
@@ -93,6 +130,16 @@ export function LogsPage() {
     refetchInterval: 8_000,
   });
 
+  const received = useQuery({
+    queryKey: ['webhooks', { query }],
+    queryFn: async () => {
+      const params = query ? `?q=${encodeURIComponent(query)}` : '';
+      const r = await api.get<{ ok: true; items: WebhookItem[] }>(`/api/webhooks${params}`);
+      return r.items;
+    },
+    refetchInterval: 8_000,
+  });
+
   const retryOne = useMutation({
     mutationFn: ({ worker, id }: { worker: WorkerId; id: string }) =>
       api.post(`/api/dlq/${worker}/${id}/retry`),
@@ -111,6 +158,18 @@ export function LogsPage() {
 
   const allDlq = dlq.data ?? [];
   const allUnmatched = unmatched.data ?? [];
+  const allReceived = received.data ?? [];
+
+  const receivedItems = useMemo(
+    () =>
+      allReceived.filter((w) => {
+        if (dateCutoff !== null && new Date(w.created_at).getTime() < dateCutoff) return false;
+        if (eventFilter !== 'all' && w.event !== eventFilter) return false;
+        if (outcomeFilter !== 'all' && w.outcome !== outcomeFilter) return false;
+        return true;
+      }),
+    [allReceived, eventFilter, outcomeFilter, dateCutoff],
+  );
 
   const dlqItems = useMemo(
     () =>
@@ -144,10 +203,12 @@ export function LogsPage() {
   const activeFilters =
     (workerFilter !== 'all' ? 1 : 0) +
     (eventFilter !== 'all' ? 1 : 0) +
+    (outcomeFilter !== 'all' ? 1 : 0) +
     (dateFilter !== 'all' ? 1 : 0);
   const clearFilters = () => {
     setWorkerFilter('all');
     setEventFilter('all');
+    setOutcomeFilter('all');
     setDateFilter('all');
   };
 
@@ -155,7 +216,7 @@ export function LogsPage() {
     <div>
       <div className="mb-8 flex flex-wrap items-end justify-between gap-6">
         <div>
-          <SectionLabel number="04">Falhas terminais e eventos não-mapeados</SectionLabel>
+          <SectionLabel number="04">Webhooks recebidos, falhas terminais e não-mapeados</SectionLabel>
           <h1>Logs &amp; DLQ</h1>
         </div>
         {tab === 'dlq' && dlqItems.length > 0 && (
@@ -166,6 +227,17 @@ export function LogsPage() {
       </div>
 
       <div className="mb-6 flex items-center gap-1 border-b border-border">
+        <button
+          onClick={() => setTab('received')}
+          className={`px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors ${
+            tab === 'received'
+              ? 'border-b-2 border-accent text-accent'
+              : 'border-b-2 border-transparent text-muted hover:text-text'
+          }`}
+        >
+          Webhooks recebidos
+          <span className="ml-2 rounded-[10px] bg-dim px-2 py-0.5 text-[11px]">{receivedItems.length}</span>
+        </button>
         <button
           onClick={() => setTab('dlq')}
           className={`px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors ${
@@ -223,6 +295,20 @@ export function LogsPage() {
               </select>
             </label>
           )}
+          {tab === 'received' && (
+            <label className="block min-w-[190px]">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                Desfecho
+              </span>
+              <select value={outcomeFilter} onChange={(e) => setOutcomeFilter(e.target.value)}>
+                {OUTCOME_FILTERS.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="block min-w-[200px]">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
               Evento
@@ -263,9 +349,35 @@ export function LogsPage() {
         <div className="mt-2 text-[11px] text-muted-2">
           {tab === 'dlq'
             ? `${dlqItems.length} de ${allDlq.length} jobs`
-            : `${unmatchedItems.length} de ${allUnmatched.length} eventos`}
+            : tab === 'unmatched'
+              ? `${unmatchedItems.length} de ${allUnmatched.length} eventos`
+              : `${receivedItems.length} de ${allReceived.length} webhooks`}
         </div>
       </Card>
+
+      {tab === 'received' && (
+        <>
+          <Callout kind="info">
+            Todo webhook que o gateway recebe é registrado aqui com seu desfecho — processado ou
+            não. Um evento com <strong>nenhum worker ativo</strong> (ex: abandono de carrinho sem
+            worker ligado) aparece como <code>SEM WORKER ATIVO</code> e não some.
+          </Callout>
+          {receivedItems.length === 0 ? (
+            <Card>
+              <div className="py-12 text-center text-xs text-muted">
+                <div className="font-display text-3xl text-muted-2">∅</div>
+                <div className="mt-3">Nenhum webhook recebido no filtro atual.</div>
+              </div>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {receivedItems.map((w) => (
+                <WebhookRow key={w.id} item={w} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {tab === 'dlq' && (
         <>
@@ -371,6 +483,60 @@ interface KiwifyPreview {
   Customer?: { full_name?: string; email?: string; mobile?: string };
   Product?: { product_name?: string };
   Products?: Array<{ name?: string; product_name?: string }>;
+}
+
+function WebhookRow({ item }: { item: WebhookItem }) {
+  const [open, setOpen] = useState(false);
+  const meta = OUTCOME_META[item.outcome] ?? { label: item.outcome.toUpperCase(), color: 'cyan' as const };
+  const eventLabel = EVENTS.find((e) => e.id === item.event)?.label ?? item.event ?? '—';
+
+  return (
+    <Card accent={meta.color} tight>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+            <Badge color={meta.color}>{meta.label}</Badge>
+            <code className="rounded-sm bg-dim px-1.5 py-0.5 text-[12px] text-accent-2">{eventLabel}</code>
+            {item.campaign_token && (
+              <code className="text-[12px] text-muted">
+                <span className="text-muted-2">token:</span> {item.campaign_token}
+              </code>
+            )}
+            {item.outcome === 'enqueued' && item.workers && item.workers.length > 0 && (
+              <span className="flex items-center gap-1">
+                {item.workers.map((wid) => {
+                  const wm = WORKERS.find((w) => w.id === wid);
+                  return wm ? <WorkerChip key={wid} workerId={wm.id} glyph={wm.glyph} size={18} /> : null;
+                })}
+              </span>
+            )}
+          </div>
+          {(item.contact_name || item.contact_email || item.product_name) && (
+            <div className="text-[12px] text-muted">
+              {item.contact_name && <span className="text-text">{item.contact_name}</span>}
+              {item.contact_name && item.contact_email && <span className="mx-1.5 text-muted-2">·</span>}
+              {item.contact_email && <span>{item.contact_email}</span>}
+              {(item.contact_name || item.contact_email) && item.product_name && (
+                <span className="mx-1.5 text-muted-2">·</span>
+              )}
+              {item.product_name && <span className="text-accent-2">{item.product_name}</span>}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-shrink-0 flex-col items-end gap-2">
+          <span className="text-[11px] text-muted-2">{timeAgo(item.created_at)}</span>
+          <Button size="sm" variant="ghost" onClick={() => setOpen((o) => !o)}>
+            {open ? '▼ ocultar JSON' : '▶ ver JSON'}
+          </Button>
+        </div>
+      </div>
+      {open && (
+        <pre className="mt-3 max-h-96 overflow-auto rounded border border-border bg-dim p-3 text-[12px] leading-relaxed text-muted">
+          {JSON.stringify(item.payload, null, 2)}
+        </pre>
+      )}
+    </Card>
+  );
 }
 
 function UnmatchedRow({
