@@ -122,10 +122,25 @@ export const SHEETS_HEADER = [
 ] as const;
 
 const HEADER_RANGE_ROW1 = 'A1:AF1';
+const APPEND_RANGE_COLUMNS = 'A:AF'; // A..AF = the 32 canonical columns
 
-// Cache: `${spreadsheetId}::${tabTitle}` → numeric sheetId. Stable per title;
-// used by appendCells (which needs the grid id, not the A1 range).
-const sheetIdCache = new Map<string, number>();
+// Per-(spreadsheet+tab) write serialization. appendRow reads the next free row
+// then writes it; without this lock two concurrent jobs could compute the same
+// row and clobber each other (the sheets worker runs at concurrency 5).
+const sheetTails = new Map<string, Promise<unknown>>();
+
+function withSheetLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const prev = sheetTails.get(key) ?? Promise.resolve();
+  const run = prev.then(task, task); // run regardless of the previous outcome
+  sheetTails.set(
+    key,
+    run.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return run;
+}
 
 function escapeTab(tab: string): string {
   // Sheet names with spaces / special chars must be wrapped in single quotes.
@@ -164,81 +179,46 @@ export interface AppendInput {
 }
 
 /**
- * Resolve a tab title → numeric sheetId (needed by the grid `appendCells` API).
- * Caches every tab of the spreadsheet on first lookup.
+ * Compute the first empty row (1-based). Reads the whole A:AF block so trailing
+ * rows that have data only in far-right columns (legacy n8n leftovers) still
+ * count — we append AFTER them instead of overwriting.
  */
-async function resolveSheetId(
+async function findNextRow(
   client: sheets_v4.Sheets,
   spreadsheetId: string,
   tab: string,
 ): Promise<number> {
-  const cacheKey = `${spreadsheetId}::${tab}`;
-  const cached = sheetIdCache.get(cacheKey);
-  if (cached != null) return cached;
-
-  try {
-    const r = await client.spreadsheets.get({
-      spreadsheetId,
-      fields: 'sheets(properties(sheetId,title))',
-    });
-    for (const s of r.data.sheets ?? []) {
-      const title = s.properties?.title;
-      const id = s.properties?.sheetId;
-      if (title != null && id != null) sheetIdCache.set(`${spreadsheetId}::${title}`, id);
-    }
-  } catch (err) {
-    const status = (err as { code?: number }).code;
-    if (typeof status === 'number') throw classifyHttpError(status, err);
-    throw new TransientError(`Sheets resolveSheetId error: ${String(err)}`, 'network');
-  }
-
-  const resolved = sheetIdCache.get(cacheKey);
-  if (resolved == null) {
-    throw new FatalError(`Tab "${tab}" not found in spreadsheet`, 'no_tab');
-  }
-  return resolved;
+  const range = `${escapeTab(tab)}!${APPEND_RANGE_COLUMNS}`;
+  const r = await client.spreadsheets.values.get({ spreadsheetId, range });
+  return (r.data.values?.length ?? 0) + 1;
 }
 
 /**
- * Map a cell value to a Google Sheets CellData. Numbers stay numeric; strings
- * (including all-digit ids like phones / product codes) stay text — no silent
- * coercion. null / '' become blank cells.
+ * Append a row anchored to an explicit `A{n}:AF{n}` range. Writing an explicit
+ * range (instead of `values.append`, which auto-detects a "table" origin and
+ * drifted into column AA on messy tabs) guarantees the row always starts at
+ * column A. Serialized per sheet+tab so the read-next-row / write pair is atomic.
  */
-function toCellData(v: string | number | null): sheets_v4.Schema$CellData {
-  if (v == null || v === '') return {};
-  if (typeof v === 'number') return { userEnteredValue: { numberValue: v } };
-  return { userEnteredValue: { stringValue: String(v) } };
-}
-
 export async function appendRow(input: AppendInput): Promise<void> {
   const client = await getClient();
   await ensureHeader(client, input.spreadsheetId, input.tab);
-  const sheetId = await resolveSheetId(client, input.spreadsheetId, input.tab);
 
-  // `appendCells` appends after the last data row of the sheet, ALWAYS starting
-  // at column A. Unlike `values.append`, it does not "guess" a table origin —
-  // which is what let rows drift into column AA on tabs with stray far-right
-  // data (the old n8n columns). Single atomic request → no read-modify race.
-  try {
-    await client.spreadsheets.batchUpdate({
-      spreadsheetId: input.spreadsheetId,
-      requestBody: {
-        requests: [
-          {
-            appendCells: {
-              sheetId,
-              fields: 'userEnteredValue',
-              rows: [{ values: input.row.map(toCellData) }],
-            },
-          },
-        ],
-      },
-    });
-  } catch (err) {
-    const status = (err as { code?: number }).code;
-    if (typeof status === 'number') throw classifyHttpError(status, err);
-    throw new TransientError(`Sheets append error: ${String(err)}`, 'network');
-  }
+  await withSheetLock(`${input.spreadsheetId}::${input.tab}`, async () => {
+    try {
+      const nextRow = await findNextRow(client, input.spreadsheetId, input.tab);
+      const range = `${escapeTab(input.tab)}!A${nextRow}:AF${nextRow}`;
+      await client.spreadsheets.values.update({
+        spreadsheetId: input.spreadsheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [input.row.map((v) => (v == null ? '' : v))] },
+      });
+    } catch (err) {
+      const status = (err as { code?: number }).code;
+      if (typeof status === 'number') throw classifyHttpError(status, err);
+      throw new TransientError(`Sheets append error: ${String(err)}`, 'network');
+    }
+  });
 }
 
 // Column indexes (0-based, into the A:AF row) used by the refund lookup.

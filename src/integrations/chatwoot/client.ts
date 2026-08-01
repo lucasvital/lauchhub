@@ -247,20 +247,25 @@ export interface ChatwootConversation {
 
 /**
  * Create a new conversation for the contact in the given WhatsApp inbox.
- * source_id MUST be the contact's phone in E.164 (e.g. "+5541999999999").
- * Chatwoot creates a fresh conversation each call — that's fine for
- * outbound template messages which act as conversation openers.
+ *
+ * `source_id` is OPTIONAL and normally omitted: for a WhatsApp inbox Chatwoot
+ * derives the contact_inbox from `contact_id` + `inbox_id` (the contact_inbox
+ * was auto-created when the contact was made with `phone_number` + `inbox_id`).
+ * Passing a raw phone as source_id makes Chatwoot try to mint a NEW
+ * contact_inbox and its stricter WhatsApp source_id validation rejects it
+ * ("invalid source id for whatsapp inbox"). Chatwoot creates a fresh
+ * conversation each call — fine for outbound template openers.
  */
 export async function createConversation(
   cfg: ChatwootConfig,
-  input: { contact_id: number; inbox_id: number; source_id: string },
+  input: { contact_id: number; inbox_id: number; source_id?: string },
 ): Promise<ChatwootConversation> {
   const { body } = await http(cfg, `/api/v1/accounts/${cfg.accountId}/conversations`, {
     method: 'POST',
     body: {
       contact_id: input.contact_id,
       inbox_id: input.inbox_id,
-      source_id: input.source_id,
+      ...(input.source_id ? { source_id: input.source_id } : {}),
     },
   });
   const conv = body as Partial<ChatwootConversation>;

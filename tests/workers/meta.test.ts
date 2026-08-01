@@ -86,10 +86,11 @@ describe('processMetaJob — template send via Chatwoot', () => {
     expect(adapter.searchByPhone).toHaveBeenCalledWith(cfg, '5541999999999');
     expect(adapter.createContact).not.toHaveBeenCalled();
     expect(adapter.listInboxTemplates).toHaveBeenCalledWith(cfg, 14);
+    // source_id is intentionally omitted — Chatwoot resolves the contact_inbox
+    // from contact_id + inbox_id for WhatsApp.
     expect(adapter.createConversation).toHaveBeenCalledWith(cfg, {
       contact_id: 7,
       inbox_id: 14,
-      source_id: '5541999999999',
     });
     expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(cfg, 99, {
       template_name: 'boas_vindas_compra',
