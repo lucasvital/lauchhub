@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // All collaborator mocks set up before import of the route module
 const findByTokenMock = vi.fn();
 const saveUnmatchedMock = vi.fn();
+const saveWebhookMock = vi.fn().mockResolvedValue(undefined);
 const sheetsAdd = vi.fn();
 const chatwootAdd = vi.fn();
 const mauticAdd = vi.fn();
@@ -10,6 +11,7 @@ const metaAdd = vi.fn();
 
 vi.mock('../../src/db/campaigns.js', () => ({ findByToken: findByTokenMock }));
 vi.mock('../../src/db/unmatched.js', () => ({ save: saveUnmatchedMock }));
+vi.mock('../../src/db/webhook-events.js', () => ({ save: saveWebhookMock }));
 vi.mock('../../src/queue/index.js', () => ({
   queues: {
     sheets: { add: sheetsAdd },

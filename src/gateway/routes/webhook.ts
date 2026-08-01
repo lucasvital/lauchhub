@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import * as campaignsDb from '../../db/campaigns.js';
 import * as unmatchedDb from '../../db/unmatched.js';
+import * as webhookEventsDb from '../../db/webhook-events.js';
 import { queues } from '../../queue/index.js';
 import { detectEvent, type KiwifyPayload } from '../event-detection.js';
 import { buildJobs } from '../enrich.js';
@@ -14,6 +15,9 @@ import { buildJobs } from '../enrich.js';
  *   - Unknown token → save raw payload to unmatched_events.
  *   - Known but inactive campaign → silently ack.
  *   - Known + active → detect event, build per-worker jobs, fan-out enqueue.
+ *   - EVERY received webhook is logged to webhook_events with its outcome, so
+ *     the panel can show processed AND not-processed webhooks (e.g. an event
+ *     with no worker enabled — invisible everywhere else).
  */
 export async function registerWebhookRoute(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { token: string }; Body: KiwifyPayload }>(
@@ -25,13 +29,38 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
 
       log.info({ event: 'webhook_received' });
 
+      // Lightweight summary extracted for the received-webhooks panel view.
+      const customer = payload.Customer ?? {};
+      const summary = {
+        contact_name: customer.full_name ?? customer.name ?? null,
+        contact_email: customer.email ?? null,
+        product_name:
+          payload.Products?.[0]?.name ??
+          payload.Products?.[0]?.product_name ??
+          payload.Product?.product_name ??
+          payload.Product?.name ??
+          null,
+      };
+
+      // Fire-and-forget log — never let it break the 200-to-Kiwify contract.
+      const record = (
+        fields: Partial<webhookEventsDb.SaveInput> & { outcome: webhookEventsDb.WebhookOutcome },
+      ): void => {
+        void webhookEventsDb
+          .save({ token, payload, ...summary, ...fields })
+          .catch((err) => log.error({ event: 'webhook_log_error', err: String(err) }));
+      };
+
       try {
         // Light validation: payload must have *some* customer identifier
         const hasContact = !!(payload.Customer?.email || payload.Customer?.mobile);
         if (!hasContact) {
           log.warn({ event: 'validation_failed', reason: 'no contact identifier' });
+          record({ outcome: 'no_contact' });
           return reply.code(200).send({ ok: true, processed: false, reason: 'no_contact' });
         }
+
+        const eventId = detectEvent(payload);
 
         const campaign = await campaignsDb.findByToken(token).catch((err) => {
           log.error({ event: 'db_error', err: String(err) });
@@ -43,17 +72,28 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
             log.error({ event: 'unmatched_save_error', err: String(err) });
           });
           log.info({ event: 'campaign_unmatched' });
+          record({ outcome: 'unmatched', event: eventId });
           return reply.code(200).send({ ok: true, processed: false, reason: 'unmatched' });
         }
 
         if (!campaign.active) {
           log.info({ event: 'campaign_inactive', campaign_id: campaign.id });
+          record({
+            outcome: 'inactive',
+            event: eventId,
+            campaign_id: campaign.id,
+            campaign_token: campaign.campaign_token,
+          });
           return reply.code(200).send({ ok: true, processed: false, reason: 'inactive' });
         }
 
-        const eventId = detectEvent(payload);
         if (!eventId) {
           log.warn({ event: 'event_unrecognized', order_status: payload.order_status });
+          record({
+            outcome: 'unrecognized_event',
+            campaign_id: campaign.id,
+            campaign_token: campaign.campaign_token,
+          });
           return reply.code(200).send({ ok: true, processed: false, reason: 'unrecognized_event' });
         }
 
@@ -61,6 +101,13 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
 
         if (jobs.length === 0) {
           log.info({ event: 'no_workers_enabled', event_id: eventId });
+          record({
+            outcome: 'no_workers_enabled',
+            event: eventId,
+            campaign_id: campaign.id,
+            campaign_token: campaign.campaign_token,
+            jobs_enqueued: 0,
+          });
           return reply.code(200).send({
             ok: true,
             processed: true,
@@ -77,6 +124,9 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
 
         const enqueued = results.filter((r) => r.status === 'fulfilled').length;
         const failed = results.length - enqueued;
+        const enqueuedWorkers = jobs
+          .filter((_, i) => results[i]?.status === 'fulfilled')
+          .map((j) => j.worker);
 
         log.info({
           event: 'jobs_enqueued',
@@ -96,6 +146,15 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
           });
         }
 
+        record({
+          outcome: 'enqueued',
+          event: eventId,
+          campaign_id: campaign.id,
+          campaign_token: campaign.campaign_token,
+          workers: enqueuedWorkers,
+          jobs_enqueued: enqueued,
+        });
+
         return reply.code(200).send({
           ok: true,
           processed: true,
@@ -105,6 +164,7 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
       } catch (err) {
         // Last-resort guard: ANYTHING above throwing still returns 200 to Kiwify
         log.error({ event: 'webhook_uncaught_error', err: String(err) });
+        record({ outcome: 'error' });
         return reply.code(200).send({ ok: true, processed: false, reason: 'internal_error' });
       }
     },

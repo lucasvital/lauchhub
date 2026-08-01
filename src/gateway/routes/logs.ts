@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { queues } from '../../queue/index.js';
 import * as unmatchedDb from '../../db/unmatched.js';
+import * as webhookEventsDb from '../../db/webhook-events.js';
 import type { WorkerId } from '../../types/job.js';
 
 const WORKER_IDS: WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta'];
@@ -105,6 +106,23 @@ export async function registerLogsRoutes(app: FastifyInstance): Promise<void> {
       const ok = await unmatchedDb.remove(req.params.id);
       if (!ok) return reply.code(404).send({ ok: false, error: 'not_found' });
       return { ok: true };
+    },
+  );
+
+  // ─── Received webhooks (all, processed + not) ─────────────────────────────
+
+  app.get<{ Querystring: { q?: string; event?: string; outcome?: string; limit?: string } }>(
+    '/api/webhooks',
+    { preHandler: app.requireAuth },
+    async (req) => {
+      const limit = Math.min(Number(req.query.limit ?? '200'), 500);
+      const items = await webhookEventsDb.list({
+        query: req.query.q,
+        event: req.query.event,
+        outcome: req.query.outcome,
+        limit,
+      });
+      return { ok: true, items };
     },
   );
 }
