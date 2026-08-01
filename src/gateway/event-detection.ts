@@ -12,6 +12,17 @@ export interface KiwifyPayload {
   webhook_event_type?: string;
   payment_method?: string;
   payment_merchant_id?: string;
+
+  // Abandoned-cart webhook is FLAT (no Customer/Products nesting): contact and
+  // product fields live at the top level, and the status field is `status`
+  // (not `order_status`). These optional fields cover that shape.
+  id?: string;
+  status?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  checkout_link?: string;
+  country?: string | null;
   // Some Kiwify payloads send Products (array), others send Product (singular).
   Products?: Array<{ product_id?: string; name?: string; product_name?: string }>;
   Product?: { product_id?: string; name?: string; product_name?: string };
@@ -61,7 +72,8 @@ function toNumber(v: unknown): number | null {
  */
 export function detectEvent(payload: KiwifyPayload): EventId | null {
   const eventType = (payload.webhook_event_type ?? '').toLowerCase();
-  const status = (payload.order_status ?? '').toLowerCase();
+  // Purchase webhooks use `order_status`; the abandoned-cart webhook uses `status`.
+  const status = (payload.order_status ?? payload.status ?? '').toLowerCase();
 
   if (eventType === 'subscription_canceled') return 'subscription_canceled';
   if (eventType === 'subscription_renewed') return 'subscription_renewed';
@@ -99,11 +111,12 @@ export function extractContact(payload: KiwifyPayload): {
   city: string | null;
 } {
   const c = payload.Customer ?? {};
-  const name = c.full_name ?? c.name ?? '';
+  // Fall back to the flat abandoned-cart fields when Customer is absent.
+  const name = c.full_name ?? c.name ?? payload.name ?? '';
   return {
     name,
-    email: c.email ?? null,
-    phone: c.mobile ?? c.phone ?? null,
+    email: c.email ?? payload.email ?? null,
+    phone: c.mobile ?? c.phone ?? payload.phone ?? null,
     first_name: c.first_name ?? (name ? name.split(/\s+/)[0] : undefined),
     instagram: c.instagram ?? null,
     city: c.city ?? null,
@@ -128,14 +141,16 @@ export function extractOrder(payload: KiwifyPayload): {
   // Accept both plural (Products[0]) and singular (Product) shapes.
   const productsArr = payload.Products ?? [];
   const product = productsArr[0] ?? payload.Product;
-  const id = payload.order_id ?? '';
+  // Purchase webhooks use order_id/order_ref/order_status; the flat abandoned
+  // cart webhook uses id/checkout_link/status.
+  const id = payload.order_id ?? payload.id ?? '';
   const c = payload.Commissions ?? {};
   const value = toNumber(payload.value ?? payload.charge_amount ?? c.charge_amount);
 
   return {
     id,
-    ref: payload.order_ref ?? null,
-    status: payload.order_status ?? '',
+    ref: payload.order_ref ?? payload.checkout_link ?? null,
+    status: payload.order_status ?? payload.status ?? '',
     payment_method: payload.payment_method ?? null,
     value,
     product_id: product?.product_id ?? payload.product_id ?? null,

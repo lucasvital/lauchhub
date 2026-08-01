@@ -108,6 +108,41 @@ describe('POST /webhook/:token', () => {
     expect(metaAdd).toHaveBeenCalledTimes(1);
   });
 
+  it('processes a flat abandoned-cart webhook (no Customer/Products nesting)', async () => {
+    findByTokenMock.mockResolvedValue({
+      ...baseCampaign,
+      enabled_workers: { carrinho_abandonado: ['sheets', 'chatwoot'] },
+    });
+    const app = await buildServer();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/cx-01',
+      payload: {
+        id: 'z97b9na9ll61tcgy79',
+        status: 'abandoned',
+        name: 'John Doe',
+        email: 'johndoe@example.com',
+        phone: '(41) 5072-9804',
+        product_id: 'c10b798e',
+        product_name: 'Example product',
+        checkout_link: 'KgyiEBV',
+      },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.processed).toBe(true);
+    expect(body.event).toBe('carrinho_abandonado');
+    expect(body.jobs_enqueued).toBe(2);
+    // Contact must be extracted from the FLAT fields, not Customer.*
+    const job = sheetsAdd.mock.calls[0]?.[1];
+    expect(job.contact.email).toBe('johndoe@example.com');
+    expect(job.contact.name).toBe('John Doe');
+    expect(job.order.product_name).toBe('Example product');
+  });
+
   it('saves to unmatched_events when token is unknown', async () => {
     findByTokenMock.mockResolvedValue(null);
     const app = await buildServer();
@@ -238,6 +273,8 @@ describe('detectEvent', () => {
     // Chargeback is treated as a refund
     expect(detectEvent({ order_status: 'chargedback' })).toBe('compra_reembolsada');
     expect(detectEvent({ order_status: 'chargeback' })).toBe('compra_reembolsada');
+    // Abandoned-cart webhook is flat and uses `status` (not `order_status`)
+    expect(detectEvent({ status: 'abandoned' })).toBe('carrinho_abandonado');
     expect(detectEvent({ webhook_event_type: 'subscription_canceled' })).toBe('subscription_canceled');
     expect(detectEvent({ webhook_event_type: 'subscription_renewed' })).toBe('subscription_renewed');
     expect(detectEvent({ order_status: 'whatever' })).toBeNull();
