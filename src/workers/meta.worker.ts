@@ -148,13 +148,13 @@ export async function processMetaJob(
     }
   }
 
-  // Chatwoot's WhatsApp inbox validates source_id against ^\d{1,20}(-\d{1,20})?$
-  // — i.e. pure digits, NO leading "+". The phone_number on the contact above
-  // keeps the + (that's the E.164 display field); source_id is the raw key.
+  // Do NOT pass source_id: for a WhatsApp inbox Chatwoot resolves the
+  // contact_inbox from contact_id + inbox_id (created when the contact was made
+  // with phone_number + inbox_id). Passing the raw phone makes Chatwoot mint a
+  // new contact_inbox and reject it with "invalid source id for whatsapp inbox".
   const conversation = await adapter.createConversation(cfg, {
     contact_id: contact.id,
     inbox_id: inboxId,
-    source_id: phone,
   });
 
   const msg = await adapter.sendTemplateMessage(cfg, conversation.id, {
