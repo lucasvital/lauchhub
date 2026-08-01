@@ -9,6 +9,7 @@
  *   "+55 41 99999-9999"  → "5541999999999"
  *   "5541999999999"      → "5541999999999"
  *   "011969462021"       → "5511969462021"    (leading trunk "0")
+ *   "+55017997443919"    → "5517997443919"    (trunk "0" inside DDD: 017)
  *   "+555584991902060"   → "5584991902060"    (duplicated DDI 55)
  *   "+351914998189"      → "351914998189"     (international, non-BR)
  *
@@ -47,6 +48,11 @@ export function normalizePhone(input: string | null | undefined): string | null 
   while (digits.length > 11 && digits.startsWith('55')) {
     digits = digits.slice(2);
   }
+
+  // Strip a trunk "0" that sits between the DDI and the DDD (people type the
+  // area code as "017"/"031"). Brazilian DDDs never start with 0, so a leading
+  // 0 on the remaining core is always a carrier prefix — safe to drop.
+  digits = digits.replace(/^0+/, '');
 
   // The core must be DDD (2) + number (8 landline | 9 mobile) = 10 or 11.
   if (digits.length !== 10 && digits.length !== 11) return null;

@@ -24,6 +24,13 @@ describe('normalizePhone', () => {
     expect(normalizePhone('011969462021')).toBe('5511969462021');
   });
 
+  it('strips a trunk "0" inside the DDD after the DDI (55 + 017 + number)', () => {
+    // Paulo: "+55017997443919" → 55 + 0-17 + 997443919
+    expect(normalizePhone('+55017997443919')).toBe('5517997443919');
+    // Adreis: "+55031999812983" → 55 + 0-31 + 999812983
+    expect(normalizePhone('+55031999812983')).toBe('5531999812983');
+  });
+
   it('collapses a duplicated DDI 55 (+55 on a number that already had 55)', () => {
     // Nicholas: "+555584991902060" → 55 + 5584991902060
     expect(normalizePhone('+555584991902060')).toBe('5584991902060');
