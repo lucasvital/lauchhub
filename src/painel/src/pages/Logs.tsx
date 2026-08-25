@@ -491,6 +491,9 @@ function WebhookRow({ item }: { item: WebhookItem }) {
   const [open, setOpen] = useState(false);
   const meta = OUTCOME_META[item.outcome] ?? { label: item.outcome.toUpperCase(), color: 'cyan' as const };
   const eventLabel = EVENTS.find((e) => e.id === item.event)?.label ?? item.event ?? '—';
+  const p = (item.payload ?? {}) as { checkout_link?: string; Product?: { product_offer_name?: string } };
+  const checkoutLink = p.checkout_link ?? null;
+  const offerName = p.Product?.product_offer_name ?? null;
 
   return (
     <Card accent={meta.color} tight>
@@ -504,6 +507,12 @@ function WebhookRow({ item }: { item: WebhookItem }) {
                 <span className="text-muted-2">token:</span> {item.campaign_token}
               </code>
             )}
+            {checkoutLink && (
+              <code className="rounded-sm bg-dim px-1.5 py-0.5 text-[12px] text-accent-4">
+                <span className="text-muted-2">checkout:</span> {checkoutLink}
+              </code>
+            )}
+            {offerName && <Badge color="cyan">{offerName}</Badge>}
             {item.outcome === 'enqueued' && item.workers && item.workers.length > 0 && (
               <span className="flex items-center gap-1">
                 {item.workers.map((wid) => {
