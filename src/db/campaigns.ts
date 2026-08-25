@@ -28,6 +28,8 @@ export interface CampaignRow {
   // Chatwoot worker. No separate meta_instance needed.
   meta_templates: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers: Record<string, WorkerId[]>;
+  /** When true, only process a webhook whose main product == product_id. */
+  match_by_product: boolean;
   active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -48,6 +50,7 @@ export interface CampaignCreateInput {
   mautic_event_config?: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates?: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers?: Record<string, WorkerId[]>;
+  match_by_product?: boolean;
   active?: boolean;
 }
 
@@ -65,6 +68,7 @@ export interface CampaignUpdateInput {
   mautic_event_config?: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates?: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers?: Record<string, WorkerId[]>;
+  match_by_product?: boolean;
 }
 
 const ALL_COLS = `
@@ -73,7 +77,7 @@ const ALL_COLS = `
   chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
   mautic_instance_id, mautic_event_config,
   meta_templates,
-  enabled_workers, active, created_at, updated_at
+  enabled_workers, match_by_product, active, created_at, updated_at
 `;
 
 export async function findByToken(token: string): Promise<CampaignRow | null> {
@@ -132,13 +136,13 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
         mautic_instance_id, mautic_event_config,
         meta_templates,
-        enabled_workers, active)
+        enabled_workers, match_by_product, active)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
-             $14::jsonb,$15)
+             $14::jsonb,$15,$16)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -155,6 +159,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       JSON.stringify(input.mautic_event_config ?? {}),
       JSON.stringify(input.meta_templates ?? {}),
       JSON.stringify(input.enabled_workers ?? {}),
+      input.match_by_product ?? false,
       input.active ?? true,
     ],
   );
@@ -185,6 +190,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.mautic_event_config !== undefined) setField('mautic_event_config', patch.mautic_event_config, true);
   if (patch.meta_templates !== undefined) setField('meta_templates', patch.meta_templates, true);
   if (patch.enabled_workers !== undefined) setField('enabled_workers', patch.enabled_workers, true);
+  if (patch.match_by_product !== undefined) setField('match_by_product', patch.match_by_product);
 
   if (fields.length === 0) {
     return findById(id);

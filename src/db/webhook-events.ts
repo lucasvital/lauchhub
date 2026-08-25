@@ -7,6 +7,7 @@ export type WebhookOutcome =
   | 'inactive'
   | 'unrecognized_event'
   | 'no_contact'
+  | 'skipped_other_offer'
   | 'error';
 
 export interface WebhookEventRow {

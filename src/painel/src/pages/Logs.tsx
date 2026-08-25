@@ -54,6 +54,7 @@ interface WebhookItem {
 const OUTCOME_META: Record<string, { label: string; color: 'green' | 'amber' | 'red' | 'cyan' | 'purple' }> = {
   enqueued: { label: 'PROCESSADO', color: 'green' },
   no_workers_enabled: { label: 'SEM WORKER ATIVO', color: 'amber' },
+  skipped_other_offer: { label: 'OUTRA OFERTA', color: 'purple' },
   unmatched: { label: 'SEM CAMPANHA', color: 'amber' },
   inactive: { label: 'CAMPANHA PAUSADA', color: 'purple' },
   unrecognized_event: { label: 'EVENTO DESCONHECIDO', color: 'cyan' },
@@ -65,6 +66,7 @@ const OUTCOME_FILTERS: { id: string; label: string }[] = [
   { id: 'all', label: 'todos' },
   { id: 'enqueued', label: 'Processados' },
   { id: 'no_workers_enabled', label: 'Sem worker ativo' },
+  { id: 'skipped_other_offer', label: 'Outra oferta' },
   { id: 'unmatched', label: 'Sem campanha' },
   { id: 'inactive', label: 'Campanha pausada' },
   { id: 'unrecognized_event', label: 'Evento desconhecido' },

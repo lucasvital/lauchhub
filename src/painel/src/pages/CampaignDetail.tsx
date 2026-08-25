@@ -280,6 +280,46 @@ export function CampaignDetailPage() {
             onChangeId={(v) => patchCampaign.mutate({ sheets_id: v })}
             onChangeTab={(v) => patchCampaign.mutate({ sheets_tab: v })}
           />
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              ID do produto principal (oferta)
+            </span>
+            <input
+              defaultValue={c.product_id ?? ''}
+              onBlur={(e) => {
+                if (e.target.value !== (c.product_id ?? ''))
+                  patchCampaign.mutate({ product_id: e.target.value || null });
+              }}
+              placeholder="ex: bc40a260-8b90-11f1-..."
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 flex items-start justify-between gap-4 rounded border border-border bg-dim px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[12px] font-semibold text-text">Validar pela oferta (produto principal)</div>
+            <div className="mt-0.5 text-[11px] leading-relaxed text-muted-2">
+              Só processa o webhook quando o produto principal do pedido for igual ao ID acima.
+              Use quando o mesmo produto aparece como order-bump em outra campanha — evita que a venda
+              de um funil caia no outro. Requer o ID do produto principal preenchido.
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={c.match_by_product}
+            disabled={patchCampaign.isPending}
+            onClick={() => patchCampaign.mutate({ match_by_product: !c.match_by_product })}
+            className={`relative mt-0.5 h-[18px] w-8 flex-shrink-0 rounded-[10px] border transition-colors ${
+              c.match_by_product ? 'border-accent bg-accent/15' : 'border-border bg-surface'
+            } disabled:opacity-50`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full transition-transform ${
+                c.match_by_product ? 'bg-accent translate-x-3.5' : 'bg-muted'
+              }`}
+            />
+          </button>
         </div>
         <Callout kind="tip">
           Quando o dropdown está em "— fallback global —", as credenciais vêm do <code>.env</code> do
