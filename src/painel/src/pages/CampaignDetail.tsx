@@ -280,9 +280,26 @@ export function CampaignDetailPage() {
             onChangeId={(v) => patchCampaign.mutate({ sheets_id: v })}
             onChangeTab={(v) => patchCampaign.mutate({ sheets_tab: v })}
           />
+          <label className="block sm:col-span-2">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Checkout(s) da oferta
+            </span>
+            <input
+              defaultValue={(c.checkout_links ?? []).join(', ')}
+              onBlur={(e) => {
+                const list = e.target.value
+                  .split(/[\s,]+/)
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                if (JSON.stringify(list) !== JSON.stringify(c.checkout_links ?? []))
+                  patchCampaign.mutate({ checkout_links: list });
+              }}
+              placeholder="ex: eoGZFJ4, OMGTOhC  (código do checkout_link, separado por vírgula)"
+            />
+          </label>
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-              ID do produto principal (oferta)
+              ID do produto principal (fallback)
             </span>
             <input
               defaultValue={c.product_id ?? ''}
@@ -297,11 +314,13 @@ export function CampaignDetailPage() {
 
         <div className="mt-4 flex items-start justify-between gap-4 rounded border border-border bg-dim px-4 py-3">
           <div className="min-w-0">
-            <div className="text-[12px] font-semibold text-text">Validar pela oferta (produto principal)</div>
+            <div className="text-[12px] font-semibold text-text">Validar pela oferta</div>
             <div className="mt-0.5 text-[11px] leading-relaxed text-muted-2">
-              Só processa o webhook quando o produto principal do pedido for igual ao ID acima.
-              Use quando o mesmo produto aparece como order-bump em outra campanha — evita que a venda
-              de um funil caia no outro. Requer o ID do produto principal preenchido.
+              Só processa o webhook que for da oferta desta campanha. Compara pelo{' '}
+              <strong>checkout(s)</strong> cadastrado acima (todos os webhooks de uma venda —
+              principal e order-bumps — carregam o mesmo <code>checkout_link</code>). Sem checkout,
+              cai no <strong>ID do produto principal</strong>. Use quando o mesmo produto aparece como
+              order-bump em outro funil — evita que a venda de um caia no outro.
             </div>
           </div>
           <button

@@ -95,18 +95,32 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
           return reply.code(200).send({ ok: true, processed: false, reason: 'inactive' });
         }
 
-        // Offer matching: when enabled, only act on orders whose MAIN product
-        // (the offer) is this campaign's product. Separates two funnels that
-        // swap a product's role (main vs order-bump) — each processes only its
-        // own sale even though Kiwify fires the webhook to both.
-        if (campaign.match_by_product && campaign.product_id) {
-          const mainProductId = extractMainProductId(payload);
-          if (mainProductId !== campaign.product_id) {
+        // Offer matching: when enabled, only act on this campaign's own offer.
+        // Preferred discriminator is the Kiwify `checkout_link` — every webhook
+        // of one sale (main product AND order bumps, which Kiwify sends as
+        // separate product webhooks) carries the same checkout_link, so it
+        // separates two funnels that share products regardless of how bumps are
+        // delivered. Falls back to the main product_id when no checkout is set.
+        if (campaign.match_by_product) {
+          const links = campaign.checkout_links ?? [];
+          let matches = true;
+          let expected: string | null = null;
+          let got: string | null = null;
+          if (links.length > 0) {
+            expected = links.join(',');
+            got = payload.checkout_link ?? null;
+            matches = !!got && links.includes(got);
+          } else if (campaign.product_id) {
+            expected = campaign.product_id;
+            got = extractMainProductId(payload);
+            matches = got === campaign.product_id;
+          }
+          if (!matches) {
             log.info({
               event: 'skipped_other_offer',
               campaign_id: campaign.id,
-              expected_product: campaign.product_id,
-              order_product: mainProductId,
+              expected,
+              got,
             });
             record({
               outcome: 'skipped_other_offer',

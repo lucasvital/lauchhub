@@ -137,6 +137,7 @@ export interface Campaign {
   meta_templates: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers: Record<string, WorkerId[]>;
   match_by_product: boolean;
+  checkout_links: string[];
   active: boolean;
   created_at: string;
   updated_at: string;
