@@ -28,8 +28,10 @@ export interface CampaignRow {
   // Chatwoot worker. No separate meta_instance needed.
   meta_templates: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers: Record<string, WorkerId[]>;
-  /** When true, only process a webhook whose main product == product_id. */
+  /** When true, only process a webhook matching this campaign's offer. */
   match_by_product: boolean;
+  /** Kiwify checkout codes that belong to this campaign (offer matching). */
+  checkout_links: string[];
   active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -51,6 +53,7 @@ export interface CampaignCreateInput {
   meta_templates?: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers?: Record<string, WorkerId[]>;
   match_by_product?: boolean;
+  checkout_links?: string[];
   active?: boolean;
 }
 
@@ -69,6 +72,7 @@ export interface CampaignUpdateInput {
   meta_templates?: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers?: Record<string, WorkerId[]>;
   match_by_product?: boolean;
+  checkout_links?: string[];
 }
 
 const ALL_COLS = `
@@ -77,7 +81,7 @@ const ALL_COLS = `
   chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
   mautic_instance_id, mautic_event_config,
   meta_templates,
-  enabled_workers, match_by_product, active, created_at, updated_at
+  enabled_workers, match_by_product, checkout_links, active, created_at, updated_at
 `;
 
 export async function findByToken(token: string): Promise<CampaignRow | null> {
@@ -136,13 +140,13 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
         mautic_instance_id, mautic_event_config,
         meta_templates,
-        enabled_workers, match_by_product, active)
+        enabled_workers, match_by_product, checkout_links, active)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
-             $14::jsonb,$15,$16)
+             $14::jsonb,$15,$16::jsonb,$17)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -160,6 +164,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       JSON.stringify(input.meta_templates ?? {}),
       JSON.stringify(input.enabled_workers ?? {}),
       input.match_by_product ?? false,
+      JSON.stringify(input.checkout_links ?? []),
       input.active ?? true,
     ],
   );
@@ -191,6 +196,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.meta_templates !== undefined) setField('meta_templates', patch.meta_templates, true);
   if (patch.enabled_workers !== undefined) setField('enabled_workers', patch.enabled_workers, true);
   if (patch.match_by_product !== undefined) setField('match_by_product', patch.match_by_product);
+  if (patch.checkout_links !== undefined) setField('checkout_links', patch.checkout_links, true);
 
   if (fields.length === 0) {
     return findById(id);

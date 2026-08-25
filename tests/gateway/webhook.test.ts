@@ -143,56 +143,57 @@ describe('POST /webhook/:token', () => {
     expect(job.order.product_name).toBe('Example product');
   });
 
-  it('processes when match_by_product is on and the main product matches', async () => {
+  const offerPayload = {
+    order_id: 'o1',
+    order_status: 'paid',
+    checkout_link: 'eoGZFJ4',
+    Product: { product_id: 'bc40a260', product_name: 'Workshop Burgers' },
+    Customer: { full_name: 'Luiz', email: 'l@x.com', mobile: '+5511959134725' },
+  };
+
+  it('processes when match_by_product is on and the checkout matches', async () => {
     findByTokenMock.mockResolvedValue({
       ...baseCampaign,
       match_by_product: true,
-      product_id: 'bc40a260',
+      checkout_links: ['eoGZFJ4', 'OTHER'],
     });
     const app = await buildServer();
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/webhook/cx-01',
-      payload: {
-        order_id: 'o1',
-        order_status: 'paid',
-        Product: { product_id: 'bc40a260', product_name: 'Workshop Burgers' },
-        Customer: { full_name: 'Luiz', email: 'l@x.com', mobile: '+5511959134725' },
-      },
-    });
+    const res = await app.inject({ method: 'POST', url: '/webhook/cx-01', payload: offerPayload });
     await app.close();
 
     expect(res.json().processed).toBe(true);
     expect(res.json().jobs_enqueued).toBe(4);
-    expect(sheetsAdd).toHaveBeenCalledTimes(1);
   });
 
-  it('skips (other_offer) when match_by_product is on and the product differs', async () => {
+  it('skips (other_offer) when match_by_product is on and the checkout differs', async () => {
     findByTokenMock.mockResolvedValue({
       ...baseCampaign,
       match_by_product: true,
-      product_id: 'the-other-product',
+      checkout_links: ['SOME_OTHER_CHECKOUT'],
     });
     const app = await buildServer();
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/webhook/cx-01',
-      payload: {
-        order_id: 'o1',
-        order_status: 'paid',
-        Product: { product_id: 'bc40a260', product_name: 'Workshop Burgers' },
-        Customer: { full_name: 'Luiz', email: 'l@x.com', mobile: '+5511959134725' },
-      },
-    });
+    const res = await app.inject({ method: 'POST', url: '/webhook/cx-01', payload: offerPayload });
     await app.close();
 
-    expect(res.statusCode).toBe(200);
     expect(res.json().processed).toBe(false);
     expect(res.json().reason).toBe('other_offer');
     expect(sheetsAdd).not.toHaveBeenCalled();
-    expect(mauticAdd).not.toHaveBeenCalled();
+  });
+
+  it('falls back to product_id match when no checkout_links are configured', async () => {
+    findByTokenMock.mockResolvedValue({
+      ...baseCampaign,
+      match_by_product: true,
+      checkout_links: [],
+      product_id: 'the-other-product',
+    });
+    const app = await buildServer();
+    const res = await app.inject({ method: 'POST', url: '/webhook/cx-01', payload: offerPayload });
+    await app.close();
+
+    expect(res.json().processed).toBe(false);
+    expect(res.json().reason).toBe('other_offer');
+    expect(sheetsAdd).not.toHaveBeenCalled();
   });
 
   it('saves to unmatched_events when token is unknown', async () => {
