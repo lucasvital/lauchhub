@@ -143,6 +143,58 @@ describe('POST /webhook/:token', () => {
     expect(job.order.product_name).toBe('Example product');
   });
 
+  it('processes when match_by_product is on and the main product matches', async () => {
+    findByTokenMock.mockResolvedValue({
+      ...baseCampaign,
+      match_by_product: true,
+      product_id: 'bc40a260',
+    });
+    const app = await buildServer();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/cx-01',
+      payload: {
+        order_id: 'o1',
+        order_status: 'paid',
+        Product: { product_id: 'bc40a260', product_name: 'Workshop Burgers' },
+        Customer: { full_name: 'Luiz', email: 'l@x.com', mobile: '+5511959134725' },
+      },
+    });
+    await app.close();
+
+    expect(res.json().processed).toBe(true);
+    expect(res.json().jobs_enqueued).toBe(4);
+    expect(sheetsAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips (other_offer) when match_by_product is on and the product differs', async () => {
+    findByTokenMock.mockResolvedValue({
+      ...baseCampaign,
+      match_by_product: true,
+      product_id: 'the-other-product',
+    });
+    const app = await buildServer();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/cx-01',
+      payload: {
+        order_id: 'o1',
+        order_status: 'paid',
+        Product: { product_id: 'bc40a260', product_name: 'Workshop Burgers' },
+        Customer: { full_name: 'Luiz', email: 'l@x.com', mobile: '+5511959134725' },
+      },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().processed).toBe(false);
+    expect(res.json().reason).toBe('other_offer');
+    expect(sheetsAdd).not.toHaveBeenCalled();
+    expect(mauticAdd).not.toHaveBeenCalled();
+  });
+
   it('saves to unmatched_events when token is unknown', async () => {
     findByTokenMock.mockResolvedValue(null);
     const app = await buildServer();

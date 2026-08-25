@@ -3,7 +3,7 @@ import * as campaignsDb from '../../db/campaigns.js';
 import * as unmatchedDb from '../../db/unmatched.js';
 import * as webhookEventsDb from '../../db/webhook-events.js';
 import { queues } from '../../queue/index.js';
-import { detectEvent, type KiwifyPayload } from '../event-detection.js';
+import { detectEvent, extractMainProductId, type KiwifyPayload } from '../event-detection.js';
 import { buildJobs } from '../enrich.js';
 
 /**
@@ -93,6 +93,29 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
             campaign_token: campaign.campaign_token,
           });
           return reply.code(200).send({ ok: true, processed: false, reason: 'inactive' });
+        }
+
+        // Offer matching: when enabled, only act on orders whose MAIN product
+        // (the offer) is this campaign's product. Separates two funnels that
+        // swap a product's role (main vs order-bump) — each processes only its
+        // own sale even though Kiwify fires the webhook to both.
+        if (campaign.match_by_product && campaign.product_id) {
+          const mainProductId = extractMainProductId(payload);
+          if (mainProductId !== campaign.product_id) {
+            log.info({
+              event: 'skipped_other_offer',
+              campaign_id: campaign.id,
+              expected_product: campaign.product_id,
+              order_product: mainProductId,
+            });
+            record({
+              outcome: 'skipped_other_offer',
+              event: eventId,
+              campaign_id: campaign.id,
+              campaign_token: campaign.campaign_token,
+            });
+            return reply.code(200).send({ ok: true, processed: false, reason: 'other_offer' });
+          }
         }
 
         if (!eventId) {

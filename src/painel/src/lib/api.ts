@@ -136,6 +136,7 @@ export interface Campaign {
   mautic_event_config: Partial<Record<EventId, MauticEventConfig>>;
   meta_templates: Partial<Record<EventId, MetaTemplateConfig>>;
   enabled_workers: Record<string, WorkerId[]>;
+  match_by_product: boolean;
   active: boolean;
   created_at: string;
   updated_at: string;
