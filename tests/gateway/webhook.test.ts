@@ -180,20 +180,18 @@ describe('POST /webhook/:token', () => {
     expect(sheetsAdd).not.toHaveBeenCalled();
   });
 
-  it('falls back to product_id match when no checkout_links are configured', async () => {
+  it('does not filter when match_by_product is on but no checkout_links set', async () => {
     findByTokenMock.mockResolvedValue({
       ...baseCampaign,
       match_by_product: true,
       checkout_links: [],
-      product_id: 'the-other-product',
     });
     const app = await buildServer();
     const res = await app.inject({ method: 'POST', url: '/webhook/cx-01', payload: offerPayload });
     await app.close();
 
-    expect(res.json().processed).toBe(false);
-    expect(res.json().reason).toBe('other_offer');
-    expect(sheetsAdd).not.toHaveBeenCalled();
+    expect(res.json().processed).toBe(true);
+    expect(res.json().jobs_enqueued).toBe(4);
   });
 
   it('saves to unmatched_events when token is unknown', async () => {

@@ -102,22 +102,6 @@ export function detectEvent(payload: KiwifyPayload): EventId | null {
   }
 }
 
-/**
- * The order's MAIN product = the offer. Kiwify puts it in `Product` (singular);
- * order bumps and extras live elsewhere. Every webhook for the same order
- * carries the same `Product.product_id`, which is what lets two funnels that
- * swap a product's role (main vs bump) tell their own sale apart. Falls back to
- * flat/plural shapes.
- */
-export function extractMainProductId(payload: KiwifyPayload): string | null {
-  return (
-    payload.Product?.product_id ??
-    payload.product_id ??
-    payload.Products?.[0]?.product_id ??
-    null
-  );
-}
-
 export function extractContact(payload: KiwifyPayload): {
   name: string;
   email: string | null;

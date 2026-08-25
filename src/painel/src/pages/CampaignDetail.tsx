@@ -297,30 +297,16 @@ export function CampaignDetailPage() {
               placeholder="ex: eoGZFJ4, OMGTOhC  (código do checkout_link, separado por vírgula)"
             />
           </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-              ID do produto principal (fallback)
-            </span>
-            <input
-              defaultValue={c.product_id ?? ''}
-              onBlur={(e) => {
-                if (e.target.value !== (c.product_id ?? ''))
-                  patchCampaign.mutate({ product_id: e.target.value || null });
-              }}
-              placeholder="ex: bc40a260-8b90-11f1-..."
-            />
-          </label>
         </div>
 
         <div className="mt-4 flex items-start justify-between gap-4 rounded border border-border bg-dim px-4 py-3">
           <div className="min-w-0">
             <div className="text-[12px] font-semibold text-text">Validar pela oferta</div>
             <div className="mt-0.5 text-[11px] leading-relaxed text-muted-2">
-              Só processa o webhook que for da oferta desta campanha. Compara pelo{' '}
-              <strong>checkout(s)</strong> cadastrado acima (todos os webhooks de uma venda —
-              principal e order-bumps — carregam o mesmo <code>checkout_link</code>). Sem checkout,
-              cai no <strong>ID do produto principal</strong>. Use quando o mesmo produto aparece como
-              order-bump em outro funil — evita que a venda de um caia no outro.
+              Só processa o webhook cujo <code>checkout_link</code> estiver na lista de{' '}
+              <strong>checkout(s)</strong> acima. Cadastre todos os checkouts do funil (o principal e
+              o de cada order-bump). Use quando o mesmo produto aparece como order-bump em outro funil
+              — evita que a venda de um caia no outro. Lista vazia = não filtra nada.
             </div>
           </div>
           <button
