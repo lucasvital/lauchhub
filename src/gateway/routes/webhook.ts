@@ -3,7 +3,7 @@ import * as campaignsDb from '../../db/campaigns.js';
 import * as unmatchedDb from '../../db/unmatched.js';
 import * as webhookEventsDb from '../../db/webhook-events.js';
 import { queues } from '../../queue/index.js';
-import { detectEvent, extractMainProductId, type KiwifyPayload } from '../event-detection.js';
+import { detectEvent, type KiwifyPayload } from '../event-detection.js';
 import { buildJobs } from '../enrich.js';
 
 /**
@@ -96,30 +96,18 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
         }
 
         // Offer matching: when enabled, only act on this campaign's own offer.
-        // Preferred discriminator is the Kiwify `checkout_link` — every webhook
-        // of one sale (main product AND order bumps, which Kiwify sends as
-        // separate product webhooks) carries the same checkout_link, so it
-        // separates two funnels that share products regardless of how bumps are
-        // delivered. Falls back to the main product_id when no checkout is set.
-        if (campaign.match_by_product) {
-          const links = campaign.checkout_links ?? [];
-          let matches = true;
-          let expected: string | null = null;
-          let got: string | null = null;
-          if (links.length > 0) {
-            expected = links.join(',');
-            got = payload.checkout_link ?? null;
-            matches = !!got && links.includes(got);
-          } else if (campaign.product_id) {
-            expected = campaign.product_id;
-            got = extractMainProductId(payload);
-            matches = got === campaign.product_id;
-          }
-          if (!matches) {
+        // Discriminator is the Kiwify `checkout_link` — a funnel's checkout(s).
+        // Order bumps arrive as separate product webhooks, each with their own
+        // checkout, so a campaign lists every checkout of its funnel (main +
+        // bumps). A webhook whose checkout isn't in the list belongs to another
+        // funnel and is skipped. An empty list means no filtering (safe no-op).
+        if (campaign.match_by_product && (campaign.checkout_links?.length ?? 0) > 0) {
+          const got = payload.checkout_link ?? null;
+          if (!got || !campaign.checkout_links.includes(got)) {
             log.info({
               event: 'skipped_other_offer',
               campaign_id: campaign.id,
-              expected,
+              accepted: campaign.checkout_links,
               got,
             });
             record({
