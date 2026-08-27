@@ -63,6 +63,29 @@ function makeAdapter() {
   };
 }
 
+describe('processMauticJob — checkout link custom field', () => {
+  it('renders {{checkout_url}} into a custom field using checkout_link + coupon', async () => {
+    const adapter = makeAdapter();
+    adapter.findContactByEmail.mockResolvedValue(null);
+    adapter.createContact.mockResolvedValue({ id: 5 });
+
+    const job = makeJob({ eventCfg: { custom_fields: { link_recuperacao: '{{checkout_url}}' } } });
+    job.order.checkout_link = 'DsybU94';
+    job.config.coupon = 'VOLTA10';
+
+    await processMauticJob(job, adapter);
+
+    expect(adapter.createContact).toHaveBeenCalledWith(
+      cfg,
+      expect.objectContaining({
+        custom_fields: expect.objectContaining({
+          link_recuperacao: 'https://pay.kiwify.com.br/DsybU94?coupon=VOLTA10',
+        }),
+      }),
+    );
+  });
+});
+
 describe('processMauticJob — create flow', () => {
   it('creates contact with tags + custom fields + UTM auto-mapped', async () => {
     const adapter = makeAdapter();

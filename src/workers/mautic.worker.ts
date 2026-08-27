@@ -10,6 +10,7 @@ import {
   tagsOf,
   type MauticConfig,
 } from '../integrations/mautic/client.js';
+import { buildCheckoutLinks } from '../shared/checkout.js';
 import { logger } from '../shared/logger.js';
 import { render, renderRecord } from '../shared/template.js';
 import type { MauticEventConfig, UtmInfo, WebhookJob } from '../types/job.js';
@@ -108,8 +109,19 @@ export async function processMauticJob(
     throw new FatalError('Mautic requires email; webhook had none', 'no_email');
   }
 
-  // Render template strings against this job's context.
-  const ctx = { contact: job.contact, order: job.order, utm: job.utm };
+  // Render template strings against this job's context. Expose the same
+  // checkout link vars as the Meta worker so a Mautic custom field / tag can
+  // carry the recovery link + coupon (e.g. {{checkout_url}} for a recovery email).
+  const coupon = job.config.coupon ?? null;
+  const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon);
+  const ctx = {
+    contact: job.contact,
+    order: job.order,
+    utm: job.utm,
+    coupon: coupon ?? '',
+    checkout_url,
+    checkout_suffix,
+  };
   const tagsAdd = evCfg.tags_add.map((t) => render(t, ctx)).filter(Boolean);
   const tagsRemove = evCfg.tags_remove.map((t) => render(t, ctx)).filter(Boolean);
   const customFields = {
