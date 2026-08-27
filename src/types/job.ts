@@ -104,6 +104,14 @@ export interface MetaTemplateConfig {
   template_name: string;
   template_params: Record<string, string>;
   language?: string; // default 'pt_BR'
+  /**
+   * Optional dynamic URL-button parameter. Rendered like template_params and
+   * sent as the button's variable SUFFIX (the template's base URL is fixed at
+   * Meta approval time). e.g. "{{checkout_suffix}}" →
+   * "0BoTnag?coupon=VOLTA10". Requires a Chatwoot that supports the modern
+   * template payload (processed_params.buttons).
+   */
+  button_url_param?: string;
 }
 
 /**

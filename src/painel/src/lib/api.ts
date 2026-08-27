@@ -118,6 +118,7 @@ export interface MetaTemplateConfig {
   template_name: string;
   template_params: Record<string, string>;
   language?: string;
+  button_url_param?: string;
 }
 
 export interface Campaign {

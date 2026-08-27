@@ -288,7 +288,13 @@ export interface SendTemplateInput {
   template_name: string;
   language: string; // e.g. "pt_BR"
   category?: string; // e.g. "MARKETING"
-  processed_params: Record<string, string>; // positional: {"1": "João", ...}
+  processed_params: Record<string, string>; // positional body params: {"1": "João", ...}
+  /**
+   * Optional dynamic URL-button variable (the suffix appended to the template's
+   * fixed base URL). When set, we send the MODERN nested processed_params shape
+   * ({ body, buttons }) that recent Chatwoot builds forward to Meta.
+   */
+  button_url_param?: string;
   /**
    * Rendered message body (final visible text). Required because Chatwoot
    * doesn't auto-render template bodies from params — the caller must
@@ -306,6 +312,16 @@ export async function sendTemplateMessage(
   conversationId: number,
   input: SendTemplateInput,
 ): Promise<{ id: number }> {
+  // Without a button, keep the flat body-only processed_params (widely
+  // compatible). With a button, switch to the modern nested shape that carries
+  // both body and the URL-button suffix.
+  const processed_params: unknown = input.button_url_param
+    ? {
+        body: input.processed_params,
+        buttons: [{ type: 'url', parameter: input.button_url_param }],
+      }
+    : input.processed_params;
+
   const { body } = await http(
     cfg,
     `/api/v1/accounts/${cfg.accountId}/conversations/${conversationId}/messages`,
@@ -317,7 +333,7 @@ export async function sendTemplateMessage(
           name: input.template_name,
           language: input.language,
           category: input.category ?? 'MARKETING',
-          processed_params: input.processed_params,
+          processed_params,
         },
       },
     },
