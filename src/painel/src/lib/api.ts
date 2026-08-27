@@ -138,6 +138,7 @@ export interface Campaign {
   enabled_workers: Record<string, WorkerId[]>;
   match_by_product: boolean;
   checkout_links: string[];
+  coupon: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;

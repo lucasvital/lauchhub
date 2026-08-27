@@ -100,8 +100,25 @@ export async function processMetaJob(
   const phoneE164 = `+${phone}`;
   const language = meta.language ?? 'pt_BR';
 
+  // Build a ready-to-use checkout URL with the campaign's coupon applied, so a
+  // template can drop it in as {{checkout_url}} (e.g. abandoned-cart recovery).
+  // Base is Kiwify's pay domain + the checkout code from the payload.
+  const coupon = job.config.coupon ?? null;
+  const checkoutCode = job.order.checkout_link;
+  let checkoutUrl = '';
+  if (checkoutCode) {
+    checkoutUrl = `https://pay.kiwify.com.br/${checkoutCode}`;
+    if (coupon) checkoutUrl += `?coupon=${encodeURIComponent(coupon)}`;
+  }
+
   // Render param values against the job context (templating support).
-  const ctx = { contact: job.contact, order: job.order, utm: job.utm };
+  const ctx = {
+    contact: job.contact,
+    order: job.order,
+    utm: job.utm,
+    coupon: coupon ?? '',
+    checkout_url: checkoutUrl,
+  };
   const processedParams = renderRecord(meta.template_params, ctx);
 
   // Fetch the template definition from the inbox to find the body text.
