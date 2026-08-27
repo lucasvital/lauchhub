@@ -312,15 +312,14 @@ export async function sendTemplateMessage(
   conversationId: number,
   input: SendTemplateInput,
 ): Promise<{ id: number }> {
-  // Without a button, keep the flat body-only processed_params (widely
-  // compatible). With a button, switch to the modern nested shape that carries
-  // both body and the URL-button suffix.
-  const processed_params: unknown = input.button_url_param
-    ? {
-        body: input.processed_params,
-        buttons: [{ type: 'url', parameter: input.button_url_param }],
-      }
-    : input.processed_params;
+  // Modern Chatwoot (>= 4.x) expects processed_params in a nested shape with
+  // body params under `body` and optional `buttons`; the legacy flat map was
+  // removed and now fails Meta validation with #132000 (param count mismatch).
+  // Always send the nested shape.
+  const processed_params: Record<string, unknown> = { body: input.processed_params };
+  if (input.button_url_param) {
+    processed_params.buttons = [{ type: 'url', parameter: input.button_url_param }];
+  }
 
   const { body } = await http(
     cfg,
