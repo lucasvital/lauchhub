@@ -238,6 +238,29 @@ describe('processMetaJob — template send via Chatwoot', () => {
     );
   });
 
+  it('passes a rendered button_url_param (checkout_suffix) to the sender', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 1 });
+    const job = makeJob({
+      template: {
+        template_name: 'boas_vindas_compra',
+        language: 'pt_BR',
+        template_params: { '1': '{{contact.first_name}}' },
+      },
+    });
+    job.order.checkout_link = '0BoTnag';
+    job.config.coupon = 'VOLTA10';
+    job.config.meta_template!.button_url_param = '{{checkout_suffix}}';
+
+    await processMetaJob(job, adapter);
+
+    expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(
+      cfg,
+      99,
+      expect.objectContaining({ button_url_param: '0BoTnag?coupon=VOLTA10' }),
+    );
+  });
+
   it('builds checkout_url without a coupon query when no coupon is set', async () => {
     const adapter = makeAdapter();
     adapter.searchByPhone.mockResolvedValue({ id: 1 });

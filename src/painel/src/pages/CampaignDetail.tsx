@@ -1062,6 +1062,7 @@ function MetaTemplatesEditor({
         template_name: name,
         language,
         template_params: isSwitch ? {} : d.template_params,
+        button_url_param: isSwitch ? undefined : d.button_url_param,
       };
     });
   }
@@ -1199,6 +1200,28 @@ function MetaTemplatesEditor({
 
         {selectedTemplate && placeholders.length === 0 && (
           <Callout kind="tip">Esse template não tem variáveis — nada pra preencher.</Callout>
+        )}
+
+        {draft.template_name && (
+          <label className="mt-4 block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Botão de URL (opcional)
+            </span>
+            <input
+              type="text"
+              value={draft.button_url_param ?? ''}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, button_url_param: e.target.value || undefined }))
+              }
+              placeholder="ex: {{checkout_suffix}}  (só o sufixo — a base fica no template da Meta)"
+              className="!py-1.5 !px-2.5 !text-[12px]"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+              Preenche a variável do botão de URL dinâmico. Deixe vazio se o link vai só no corpo
+              ({'{{checkout_url}}'}). Requer template com botão de URL aprovado na Meta e Chatwoot com
+              suporte a parâmetro de botão — teste antes de confiar.
+            </span>
+          </label>
         )}
 
         {draft.template_name && (
