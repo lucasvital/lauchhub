@@ -52,6 +52,7 @@ async function sliceConfig(
         mautic_username: creds.username,
         mautic_password: creds.password,
         mautic_event: campaign.mautic_event_config[event] ?? null,
+        coupon: campaign.coupon,
       };
     }
     case 'meta': {

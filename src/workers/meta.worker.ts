@@ -12,6 +12,7 @@ import {
   type ChatwootTemplate,
 } from '../integrations/chatwoot/client.js';
 import { logger } from '../shared/logger.js';
+import { buildCheckoutLinks } from '../shared/checkout.js';
 import { render, renderRecord } from '../shared/template.js';
 import type { WebhookJob } from '../types/job.js';
 
@@ -104,16 +105,9 @@ export async function processMetaJob(
   // template can drop it in as {{checkout_url}} (e.g. abandoned-cart recovery).
   // Base is Kiwify's pay domain + the checkout code from the payload.
   const coupon = job.config.coupon ?? null;
-  const checkoutCode = job.order.checkout_link;
-  // `checkout_suffix` is the base-less part for a WhatsApp URL-BUTTON (whose
-  // base is fixed in the approved template); `checkout_url` is the full link
-  // for a BODY variable.
-  let checkoutSuffix = '';
-  let checkoutUrl = '';
-  if (checkoutCode) {
-    checkoutSuffix = coupon ? `${checkoutCode}?coupon=${encodeURIComponent(coupon)}` : checkoutCode;
-    checkoutUrl = `https://pay.kiwify.com.br/${checkoutSuffix}`;
-  }
+  // `checkout_url` is the full link (body); `checkout_suffix` is the base-less
+  // part for a WhatsApp URL-BUTTON (whose base is fixed in the approved template).
+  const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon);
 
   // Render param values against the job context (templating support).
   const ctx = {
@@ -121,8 +115,8 @@ export async function processMetaJob(
     order: job.order,
     utm: job.utm,
     coupon: coupon ?? '',
-    checkout_url: checkoutUrl,
-    checkout_suffix: checkoutSuffix,
+    checkout_url,
+    checkout_suffix,
   };
   const processedParams = renderRecord(meta.template_params, ctx);
   const buttonUrlParam = meta.button_url_param
