@@ -137,6 +137,7 @@ export function extractOrder(payload: KiwifyPayload): {
   my_commission: number | null;
   is_order_bump: boolean;
   payment_merchant_id: string | null;
+  checkout_link: string | null;
 } {
   // Accept both plural (Products[0]) and singular (Product) shapes.
   const productsArr = payload.Products ?? [];
@@ -161,6 +162,7 @@ export function extractOrder(payload: KiwifyPayload): {
     my_commission: toNumber(c.my_commission),
     is_order_bump: productsArr.length > 1,
     payment_merchant_id: payload.payment_merchant_id ?? null,
+    checkout_link: payload.checkout_link ?? null,
   };
 }
 

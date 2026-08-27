@@ -64,6 +64,7 @@ async function sliceConfig(
         chatwoot_account_id: creds.account_id,
         chatwoot_inbox_id: campaign.chatwoot_inbox_id,
         meta_template: campaign.meta_templates[event] ?? null,
+        coupon: campaign.coupon,
       };
     }
   }

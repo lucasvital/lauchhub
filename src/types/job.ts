@@ -46,6 +46,8 @@ export interface OrderInfo {
   is_order_bump: boolean;
   /** Kiwify's internal transaction identifier */
   payment_merchant_id: string | null;
+  /** Kiwify checkout code (payload.checkout_link) — used to build checkout URLs */
+  checkout_link: string | null;
 }
 
 /**
@@ -137,6 +139,10 @@ export interface JobConfigSlice {
   // inbox. The template config is resolved per event from
   // campaign.meta_templates[event].
   meta_template?: MetaTemplateConfig | null;
+
+  // Per-campaign discount coupon, appended to the checkout URL exposed to
+  // templates as {{checkout_url}}.
+  coupon?: string | null;
 }
 
 export interface WebhookJob {

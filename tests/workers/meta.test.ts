@@ -211,4 +211,54 @@ describe('processMetaJob — template send via Chatwoot', () => {
       }),
     );
   });
+
+  it('renders {{checkout_url}} from the checkout code + campaign coupon', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 1 });
+    const job = makeJob({
+      template: {
+        template_name: 'boas_vindas_compra',
+        language: 'pt_BR',
+        template_params: { '1': '{{contact.first_name}}', '2': '{{checkout_url}}' },
+      },
+    });
+    job.order.checkout_link = '0BoTnag';
+    job.config.coupon = 'VOLTA10';
+
+    await processMetaJob(job, adapter);
+
+    expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(
+      cfg,
+      99,
+      expect.objectContaining({
+        processed_params: expect.objectContaining({
+          '2': 'https://pay.kiwify.com.br/0BoTnag?coupon=VOLTA10',
+        }),
+      }),
+    );
+  });
+
+  it('builds checkout_url without a coupon query when no coupon is set', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 1 });
+    const job = makeJob({
+      template: {
+        template_name: 'boas_vindas_compra',
+        language: 'pt_BR',
+        template_params: { '1': '{{contact.first_name}}', '2': '{{checkout_url}}' },
+      },
+    });
+    job.order.checkout_link = '0BoTnag';
+    job.config.coupon = null;
+
+    await processMetaJob(job, adapter);
+
+    expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(
+      cfg,
+      99,
+      expect.objectContaining({
+        processed_params: expect.objectContaining({ '2': 'https://pay.kiwify.com.br/0BoTnag' }),
+      }),
+    );
+  });
 });

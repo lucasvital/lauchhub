@@ -297,6 +297,24 @@ export function CampaignDetailPage() {
               placeholder="ex: eoGZFJ4, OMGTOhC  (código do checkout_link, separado por vírgula)"
             />
           </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Cupom de desconto
+            </span>
+            <input
+              defaultValue={c.coupon ?? ''}
+              onBlur={(e) => {
+                if (e.target.value !== (c.coupon ?? ''))
+                  patchCampaign.mutate({ coupon: e.target.value || null });
+              }}
+              placeholder="ex: VOLTA10"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+              Usado em <code>{'{{checkout_url}}'}</code> nos templates de WhatsApp — monta{' '}
+              <code>pay.kiwify.com.br/&#123;checkout&#125;?coupon=CUPOM</code> e abre o checkout já com
+              desconto.
+            </span>
+          </label>
         </div>
 
         <div className="mt-4 flex items-start justify-between gap-4 rounded border border-border bg-dim px-4 py-3">
