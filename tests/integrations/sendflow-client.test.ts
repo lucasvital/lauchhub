@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   removeParticipants,
   sendTextMessage,
+  sendGroupTextMessage,
   listReleases,
   listGroups,
 } from '../../src/integrations/sendflow/client.js';
@@ -118,6 +119,55 @@ describe('sendTextMessage', () => {
     await expect(
       sendTextMessage({ accountId: 'a', phoneNumber: '1', text: 't' }),
     ).rejects.toBeInstanceOf(TransientError);
+  });
+});
+
+describe('sendGroupTextMessage', () => {
+  it('POSTs to /actions/send-text-message with release, account, groups and mentions', async () => {
+    const fn = mockFetch(201, '{"message":"Ação criada com sucesso","id":"a1"}');
+    await sendGroupTextMessage({
+      releaseId: 'rel-1',
+      accountId: 'acc-9',
+      groupIds: ['120363000000000001'],
+      messageText: 'Parabéns @5535991891712!',
+      mentions: ['5535991891712'],
+    });
+
+    expect(fn).toHaveBeenCalledTimes(1);
+    const [url, init] = fn.mock.calls[0];
+    expect(url).toBe('https://sendapi.sendflow.pro/actions/send-text-message');
+    expect(JSON.parse((init as { body: string }).body)).toEqual({
+      accountId: 'acc-9',
+      releaseId: 'rel-1',
+      messageText: 'Parabéns @5535991891712!',
+      chooseSpecificGroups: true,
+      groupIds: ['120363000000000001'],
+      mentions: ['5535991891712'],
+    });
+  });
+
+  it('treats a rate-limit 403 as transient', async () => {
+    mockFetch(403, 'Limite de operações atingido!');
+    await expect(
+      sendGroupTextMessage({
+        releaseId: 'r',
+        accountId: 'a',
+        groupIds: ['g'],
+        messageText: 't',
+      }),
+    ).rejects.toBeInstanceOf(TransientError);
+  });
+
+  it('treats a 400 as fatal', async () => {
+    mockFetch(400, 'invalid');
+    await expect(
+      sendGroupTextMessage({
+        releaseId: 'r',
+        accountId: 'a',
+        groupIds: ['g'],
+        messageText: 't',
+      }),
+    ).rejects.toBeInstanceOf(FatalError);
   });
 });
 

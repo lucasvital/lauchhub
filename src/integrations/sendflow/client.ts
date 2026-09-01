@@ -234,6 +234,83 @@ export async function sendTextMessage(input: SendTextInput): Promise<void> {
   throw new FatalError(`SendFlow send-text ${res.status}: ${body.slice(0, 200)}`, `http_${res.status}`);
 }
 
+export interface SendGroupTextInput {
+  releaseId: string;
+  accountId: string;
+  groupIds: string[]; // WhatsApp GIDs (120363...), without @g.us
+  messageText: string;
+  /** Buyer phone(s) to tag in the message (digits, no +). Best-effort. */
+  mentions?: string[];
+}
+
+/**
+ * Post a text message to specific groups of a SendFlow release (campaign).
+ * POST /actions/send-text-message — creates an async action. A 2xx means the
+ * action was queued, not that it was delivered.
+ *
+ * `groupIds` must be the WhatsApp group GIDs (e.g. "120363420152631339"),
+ * NOT the SendFlow release-group document id.
+ */
+export async function sendGroupTextMessage(input: SendGroupTextInput): Promise<void> {
+  const apiKey = await getRawValue('sendflow_api_key');
+  if (!apiKey) {
+    throw new FatalError('SendFlow API key not configured — set it in /settings', 'no_credentials');
+  }
+
+  const payload: Record<string, unknown> = {
+    accountId: input.accountId,
+    releaseId: input.releaseId,
+    messageText: input.messageText,
+    chooseSpecificGroups: true,
+    groupIds: input.groupIds,
+  };
+  // SendFlow's group send-text doc has no documented mentions field; we still
+  // pass one (best-effort) so a tap-able tag works if the connector supports it.
+  if (input.mentions && input.mentions.length > 0) payload.mentions = input.mentions;
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/actions/send-text-message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    throw new TransientError(`SendFlow network error: ${String(err)}`, 'network');
+  }
+
+  let body = '';
+  try {
+    body = await res.text();
+  } catch {
+    /* ignore */
+  }
+
+  if (res.ok) {
+    let parsed: { success?: boolean } = {};
+    try {
+      parsed = JSON.parse(body) as { success?: boolean };
+    } catch {
+      return; // non-JSON 2xx — treat as queued
+    }
+    if (parsed.success === false) {
+      throw new TransientError('SendFlow group send-text not queued', 'not_sent');
+    }
+    return;
+  }
+
+  if (res.status === 403) {
+    if (body.includes('Limite de opera')) {
+      throw new TransientError('SendFlow rate limit (403)', 'rate_limited');
+    }
+    throw new FatalError(`SendFlow 403: ${body.slice(0, 200)}`, 'http_403');
+  }
+  if (res.status >= 500) {
+    throw new TransientError(`SendFlow ${res.status} upstream error`, `http_${res.status}`);
+  }
+  throw new FatalError(`SendFlow group send-text ${res.status}: ${body.slice(0, 200)}`, `http_${res.status}`);
+}
+
 export async function removeParticipants(input: RemoveParticipantsInput): Promise<void> {
   const apiKey = await getRawValue('sendflow_api_key');
   if (!apiKey) {
