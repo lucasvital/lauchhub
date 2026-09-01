@@ -3,6 +3,9 @@ import {
   removeParticipants,
   sendTextMessage,
   sendGroupTextMessage,
+  sendGroupVideoMessage,
+  sendTemplateMessageToGroups,
+  listMessageTemplates,
   listReleases,
   listGroups,
 } from '../../src/integrations/sendflow/client.js';
@@ -168,6 +171,85 @@ describe('sendGroupTextMessage', () => {
         messageText: 't',
       }),
     ).rejects.toBeInstanceOf(FatalError);
+  });
+});
+
+describe('sendGroupVideoMessage', () => {
+  it('POSTs to /actions/send-video-message with url + caption', async () => {
+    const fn = mockFetch(201, '{"id":"a1"}');
+    await sendGroupVideoMessage({
+      releaseId: 'r',
+      accountId: 'a',
+      groupIds: ['120363000000000001'],
+      url: 'https://sf/video.mp4',
+      caption: 'oi',
+    });
+    const [url, init] = fn.mock.calls[0];
+    expect(url).toBe('https://sendapi.sendflow.pro/actions/send-video-message');
+    expect(JSON.parse((init as { body: string }).body)).toMatchObject({
+      url: 'https://sf/video.mp4',
+      caption: 'oi',
+      chooseSpecificGroups: true,
+      groupIds: ['120363000000000001'],
+    });
+  });
+});
+
+describe('sendTemplateMessageToGroups', () => {
+  const target = { releaseId: 'r', accountId: 'a', groupIds: ['120363000000000001'] };
+
+  it('dispatches a video message to /actions/send-video-message', async () => {
+    const fn = mockFetch(201, '{"id":"a"}');
+    const ok = await sendTemplateMessageToGroups(
+      { type: 'video', url: 'https://sf/v.mp4', caption: 'c' },
+      target,
+    );
+    expect(ok).toBe(true);
+    expect(fn.mock.calls[0][0]).toBe('https://sendapi.sendflow.pro/actions/send-video-message');
+  });
+
+  it('dispatches a text message to /actions/send-text-message', async () => {
+    const fn = mockFetch(201, '{"id":"a"}');
+    const ok = await sendTemplateMessageToGroups({ type: 'text', text: 'olá' }, target);
+    expect(ok).toBe(true);
+    expect(fn.mock.calls[0][0]).toBe('https://sendapi.sendflow.pro/actions/send-text-message');
+  });
+
+  it('skips an unknown/empty message without calling the API', async () => {
+    const fn = mockFetch(201, '{}');
+    expect(await sendTemplateMessageToGroups({ type: 'unknown' }, target)).toBe(false);
+    expect(await sendTemplateMessageToGroups({ type: 'video' }, target)).toBe(false);
+    expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+describe('listMessageTemplates', () => {
+  it('parses text and video template messages, drops archived', async () => {
+    mockJsonFetch(200, [
+      {
+        id: 't1',
+        title: 'Regra do grupo',
+        template: [
+          { type: 'extendedTextMessage', message: { text: 'Regras: ...' } },
+          {
+            type: 'videoMessage',
+            message: { caption: 'assista', video: { url: 'https://sf/v.mp4' } },
+          },
+        ],
+      },
+      { id: 't2', title: 'Arquivado', archived: true, template: [] },
+    ]);
+    const res = await listMessageTemplates();
+    expect(res.items).toEqual([
+      {
+        id: 't1',
+        title: 'Regra do grupo',
+        messages: [
+          { type: 'text', text: 'Regras: ...' },
+          { type: 'video', url: 'https://sf/v.mp4', caption: 'assista' },
+        ],
+      },
+    ]);
   });
 });
 

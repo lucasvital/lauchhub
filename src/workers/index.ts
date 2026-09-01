@@ -9,6 +9,7 @@ import { startChatwootWorker } from './chatwoot.worker.js';
 import { startMauticWorker } from './mautic.worker.js';
 import { startMetaWorker } from './meta.worker.js';
 import { startSendflowWorker } from './sendflow.worker.js';
+import { startBroadcastScheduler, stopBroadcastScheduler } from './broadcast-scheduler.js';
 import type { Worker } from 'bullmq';
 
 async function startAll(): Promise<Worker[]> {
@@ -43,8 +44,14 @@ async function startAll(): Promise<Worker[]> {
 async function main(): Promise<void> {
   const workers = await startAll();
 
+  // Recurring group broadcasts (SendFlow templates on a schedule). Lives in the
+  // worker process (single instance) alongside the BullMQ workers.
+  startBroadcastScheduler();
+  console.log('[workers] ✓ broadcast scheduler started');
+
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[workers] shutting down on ${signal}`);
+    stopBroadcastScheduler();
     await Promise.allSettled(workers.map((w) => w.close()));
     process.exit(0);
   };

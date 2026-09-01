@@ -15,10 +15,12 @@ import {
   type MauticSegmentOption,
   type MauticTagOption,
   type MetaTemplateConfig,
+  type SendflowBroadcast,
   type SendflowEventConfig,
   type SendflowGroupOption,
   type SendflowListResponse,
   type SendflowReleaseOption,
+  type SendflowTemplateOption,
   type SheetTabOption,
   type WorkerId,
   EVENTS,
@@ -463,6 +465,14 @@ export function CampaignDetailPage() {
         accountId={c.sendflow_account_id}
         onSave={(next) => patchCampaign.mutate({ sendflow_messages: next })}
         saving={patchCampaign.isPending}
+      />
+
+      <BroadcastsEditor
+        broadcasts={c.sendflow_broadcasts ?? []}
+        hasTarget={Boolean(
+          c.sendflow_release_id && c.sendflow_account_id && (c.sendflow_group_ids ?? []).length > 0,
+        )}
+        onSave={(next) => patchCampaign.mutate({ sendflow_broadcasts: next })}
       />
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1607,6 +1617,178 @@ function SendflowMessagesEditor({
         ))}
         <Button variant="ghost" size="sm" onClick={addMessage}>
           + mensagem
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function useSendflowTemplates() {
+  return useQuery({
+    queryKey: ['sendflow', 'templates'],
+    staleTime: 90_000,
+    queryFn: () =>
+      api.get<SendflowListResponse<SendflowTemplateOption>>('/api/sendflow/templates'),
+  });
+}
+
+function normalizeTimes(raw: string): string[] {
+  return raw
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+      if (!m) return null;
+      const h = Math.min(23, Number(m[1]));
+      return `${String(h).padStart(2, '0')}:${m[2]}`;
+    })
+    .filter((v): v is string => v !== null);
+}
+
+function BroadcastsEditor({
+  broadcasts,
+  hasTarget,
+  onSave,
+}: {
+  broadcasts: SendflowBroadcast[];
+  hasTarget: boolean;
+  onSave: (next: SendflowBroadcast[]) => void;
+}) {
+  const q = useSendflowTemplates();
+  const templates = q.data?.items ?? [];
+  const noApiKey = q.data?.ok === false && q.data?.error === 'no_api_key';
+
+  function update(i: number, patch: Partial<SendflowBroadcast>) {
+    onSave(broadcasts.map((b, idx) => (idx === i ? { ...b, ...patch } : b)));
+  }
+  function add() {
+    onSave([
+      ...broadcasts,
+      { id: crypto.randomUUID(), enabled: true, template_id: '', label: '', times: ['09:00'] },
+    ]);
+  }
+  function remove(i: number) {
+    onSave(broadcasts.filter((_, idx) => idx !== i));
+  }
+
+  function summarize(msgs: SendflowTemplateOption['messages']): string {
+    const counts: Record<string, number> = {};
+    for (const m of msgs) counts[m.type] = (counts[m.type] ?? 0) + 1;
+    return Object.entries(counts)
+      .map(([t, n]) => `${n} ${t}`)
+      .join(' · ');
+  }
+
+  return (
+    <Card accent="red" className="mt-6">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3>// SendFlow — reenvio agendado no grupo</h3>
+          <p className="mt-1.5 text-[11px] text-muted">
+            Cadastre o conteúdo (mensagem + vídeo) como um <strong>modelo</strong> no SendFlow — o
+            vídeo fica hospedado lá. Aqui você escolhe o modelo e os horários; o LaunchHub reposta
+            no(s) grupo(s) da campanha nesses horários, todo dia (fuso São Paulo).
+          </p>
+        </div>
+        <PickerStatus
+          isLoading={q.isLoading}
+          isError={q.isError || q.data?.ok === false}
+          count={templates.length}
+          onRefetch={() => q.refetch()}
+        />
+      </div>
+
+      {noApiKey && (
+        <Callout kind="warn">
+          Chave da API do SendFlow não configurada — cadastre em{' '}
+          <Link to="/settings" className="underline">
+            Configurações
+          </Link>{' '}
+          pra listar os modelos.
+        </Callout>
+      )}
+      {!hasTarget && broadcasts.length > 0 && (
+        <Callout kind="warn">
+          Selecione a release, a conta e o(s) grupo(s) no bloco SendFlow acima — o reenvio usa esse
+          mesmo alvo.
+        </Callout>
+      )}
+
+      <div className="space-y-3">
+        {broadcasts.length === 0 && (
+          <p className="text-[11px] text-muted-2">Nenhum reenvio agendado. Adicione um abaixo.</p>
+        )}
+        {broadcasts.map((b, i) => {
+          const tpl = templates.find((t) => t.id === b.template_id);
+          return (
+            <div key={b.id} className="rounded border border-border bg-dim p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={b.enabled}
+                  onClick={() => update(i, { enabled: !b.enabled })}
+                  className={`relative h-[18px] w-8 shrink-0 rounded-[10px] border transition-colors ${
+                    b.enabled ? 'border-accent bg-accent/15' : 'border-border bg-surface'
+                  }`}
+                  title={b.enabled ? 'ativo' : 'pausado'}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full transition-transform ${
+                      b.enabled ? 'bg-accent translate-x-3.5' : 'bg-muted'
+                    }`}
+                  />
+                </button>
+                <select
+                  value={b.template_id}
+                  onChange={(e) => {
+                    const t = templates.find((x) => x.id === e.target.value);
+                    update(i, { template_id: e.target.value, label: t?.title ?? '' });
+                  }}
+                  className="min-w-[200px] flex-1"
+                  disabled={q.isLoading}
+                >
+                  <option value="">— escolha o modelo —</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                    </option>
+                  ))}
+                  {b.template_id && !templates.find((t) => t.id === b.template_id) && (
+                    <option value={b.template_id}>{b.label || b.template_id} (fora da lista)</option>
+                  )}
+                </select>
+                <input
+                  defaultValue={b.times.join(', ')}
+                  key={`t-${b.id}-${b.times.join(',')}`}
+                  onBlur={(e) => {
+                    const times = normalizeTimes(e.target.value);
+                    if (JSON.stringify(times) !== JSON.stringify(b.times)) update(i, { times });
+                  }}
+                  placeholder="09:00, 14:00, 20:00"
+                  className="w-[180px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => remove(i)}
+                  className="rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
+                >
+                  remover
+                </button>
+              </div>
+              <div className="mt-1.5 pl-11 text-[10px] text-muted-2">
+                {tpl
+                  ? `modelo: ${summarize(tpl.messages)} · ${b.times.length} horário(s)/dia`
+                  : b.template_id
+                    ? 'modelo fora da lista atual (verifique a chave/permissão)'
+                    : 'escolha um modelo do SendFlow'}
+              </div>
+            </div>
+          );
+        })}
+        <Button variant="ghost" size="sm" onClick={add}>
+          + reenvio
         </Button>
       </div>
     </Card>

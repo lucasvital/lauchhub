@@ -330,6 +330,72 @@ export async function sendGroupTextMessage(input: SendGroupTextInput): Promise<v
   throw new FatalError(`SendFlow group send-text ${res.status}: ${body.slice(0, 200)}`, `http_${res.status}`);
 }
 
+export interface SendGroupVideoInput {
+  releaseId: string;
+  accountId: string;
+  groupIds: string[];
+  url: string; // public video URL
+  caption?: string;
+}
+
+/**
+ * Post a video to specific groups of a SendFlow release.
+ * POST /actions/send-video-message — creates an async action (2xx = queued).
+ */
+export async function sendGroupVideoMessage(input: SendGroupVideoInput): Promise<void> {
+  const apiKey = await getRawValue('sendflow_api_key');
+  if (!apiKey) {
+    throw new FatalError('SendFlow API key not configured — set it in /settings', 'no_credentials');
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/actions/send-video-message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        accountId: input.accountId,
+        releaseId: input.releaseId,
+        caption: input.caption ?? '',
+        url: input.url,
+        chooseSpecificGroups: true,
+        groupIds: input.groupIds,
+      }),
+    });
+  } catch (err) {
+    throw new TransientError(`SendFlow network error: ${String(err)}`, 'network');
+  }
+
+  let body = '';
+  try {
+    body = await res.text();
+  } catch {
+    /* ignore */
+  }
+
+  if (res.ok) {
+    let parsed: { success?: boolean } = {};
+    try {
+      parsed = JSON.parse(body) as { success?: boolean };
+    } catch {
+      return;
+    }
+    if (parsed.success === false) throw new TransientError('SendFlow group video not queued', 'not_sent');
+    return;
+  }
+
+  if (res.status === 403) {
+    if (body.includes('Limite de opera')) {
+      throw new TransientError('SendFlow rate limit (403)', 'rate_limited');
+    }
+    throw new FatalError(`SendFlow 403: ${body.slice(0, 200)}`, 'http_403');
+  }
+  if (res.status >= 500) {
+    throw new TransientError(`SendFlow ${res.status} upstream error`, `http_${res.status}`);
+  }
+  throw new FatalError(`SendFlow group video ${res.status}: ${body.slice(0, 200)}`, `http_${res.status}`);
+}
+
 export async function removeParticipants(input: RemoveParticipantsInput): Promise<void> {
   const apiKey = await getRawValue('sendflow_api_key');
   if (!apiKey) {
@@ -376,4 +442,205 @@ export async function removeParticipants(input: RemoveParticipantsInput): Promis
     throw new TransientError(`SendFlow ${res.status} upstream error`, `http_${res.status}`);
   }
   throw new FatalError(`SendFlow ${res.status}: ${body.slice(0, 200)}`, `http_${res.status}`);
+}
+
+// ─── Message templates (SendFlow "modelos") ─────────────────────────────────
+// A broadcast references a template by id; its messages (text/image/video/
+// audio, with media hosted by SendFlow) are replayed to the groups on schedule.
+
+export type TemplateMessageType = 'text' | 'image' | 'video' | 'audio' | 'unknown';
+
+export interface TemplateMessage {
+  type: TemplateMessageType;
+  text?: string;
+  url?: string;
+  caption?: string;
+  ptt?: boolean;
+}
+
+export interface MessageTemplate {
+  id: string;
+  title: string;
+  messages: TemplateMessage[];
+}
+
+function parseTemplateMessages(raw: unknown): TemplateMessage[] {
+  // `template` may be an array or a numerically-indexed object.
+  const list: Record<string, unknown>[] = Array.isArray(raw)
+    ? (raw as Record<string, unknown>[])
+    : raw && typeof raw === 'object'
+      ? (Object.values(raw as Record<string, unknown>) as Record<string, unknown>[])
+      : [];
+  const out: TemplateMessage[] = [];
+  for (const item of list) {
+    const type = String(item.type ?? '');
+    const message = (item.message ?? {}) as Record<string, unknown>;
+    if (type === 'extendedTextMessage' || type === 'conversation') {
+      out.push({ type: 'text', text: String(message.text ?? '') });
+    } else if (type === 'imageMessage') {
+      const image = (message.image ?? {}) as Record<string, unknown>;
+      out.push({ type: 'image', url: String(image.url ?? ''), caption: String(message.caption ?? '') });
+    } else if (type === 'videoMessage') {
+      const video = (message.video ?? {}) as Record<string, unknown>;
+      out.push({ type: 'video', url: String(video.url ?? ''), caption: String(message.caption ?? '') });
+    } else if (type === 'audioMessage') {
+      const audio = (message.audio ?? {}) as Record<string, unknown>;
+      out.push({ type: 'audio', url: String(audio.url ?? ''), ptt: message.ptt === true });
+    } else {
+      out.push({ type: 'unknown' });
+    }
+  }
+  return out;
+}
+
+const TEMPLATES_TTL_MS = 90_000; // listing rate limit is 60s; cache a bit above
+let templatesCache: { at: number; items: MessageTemplate[] } | null = null;
+
+/** List the user's SendFlow message templates, cached (~90s). Stale on error. */
+export async function listMessageTemplates(): Promise<CachedList<MessageTemplate>> {
+  const now = Date.now();
+  if (templatesCache && now - templatesCache.at < TEMPLATES_TTL_MS) {
+    return { items: templatesCache.items, stale: false, fetchedAt: templatesCache.at };
+  }
+
+  let resp: Awaited<ReturnType<typeof authedGet>>;
+  try {
+    resp = await authedGet('/message-templates');
+  } catch (err) {
+    if (templatesCache) return { items: templatesCache.items, stale: true, fetchedAt: templatesCache.at };
+    throw err;
+  }
+
+  if (!resp.ok) {
+    if (templatesCache) return { items: templatesCache.items, stale: true, fetchedAt: templatesCache.at };
+    if (resp.status === 404) {
+      templatesCache = { at: now, items: [] };
+      return { items: [], stale: false, fetchedAt: now };
+    }
+    throw new FatalError(`SendFlow GET /message-templates ${resp.status}`, `http_${resp.status}`);
+  }
+
+  const raw = Array.isArray(resp.json) ? (resp.json as Record<string, unknown>[]) : [];
+  const items: MessageTemplate[] = raw
+    .filter((t) => !t.archived)
+    .map((t) => ({
+      id: String(t.id ?? ''),
+      title: String(t.title ?? t.id ?? ''),
+      messages: parseTemplateMessages(t.template),
+    }))
+    .filter((t) => t.id);
+  templatesCache = { at: now, items };
+  return { items, stale: false, fetchedAt: now };
+}
+
+/** Look up a single template by id (uses the cached listing). */
+export async function getMessageTemplate(templateId: string): Promise<MessageTemplate | null> {
+  const { items } = await listMessageTemplates();
+  return items.find((t) => t.id === templateId) ?? null;
+}
+
+// ─── Group media senders (image / audio) ────────────────────────────────────
+
+interface GroupTarget {
+  releaseId: string;
+  accountId: string;
+  groupIds: string[];
+}
+
+async function postGroupAction(
+  endpoint: string,
+  target: GroupTarget,
+  extra: Record<string, unknown>,
+  label: string,
+): Promise<void> {
+  const apiKey = await getRawValue('sendflow_api_key');
+  if (!apiKey) {
+    throw new FatalError('SendFlow API key not configured — set it in /settings', 'no_credentials');
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        accountId: target.accountId,
+        releaseId: target.releaseId,
+        chooseSpecificGroups: true,
+        groupIds: target.groupIds,
+        ...extra,
+      }),
+    });
+  } catch (err) {
+    throw new TransientError(`SendFlow network error: ${String(err)}`, 'network');
+  }
+
+  let body = '';
+  try {
+    body = await res.text();
+  } catch {
+    /* ignore */
+  }
+
+  if (res.ok) {
+    try {
+      if ((JSON.parse(body) as { success?: boolean }).success === false) {
+        throw new TransientError(`SendFlow ${label} not queued`, 'not_sent');
+      }
+    } catch (err) {
+      if (err instanceof TransientError) throw err;
+      /* non-JSON 2xx — treat as queued */
+    }
+    return;
+  }
+
+  if (res.status === 403) {
+    if (body.includes('Limite de opera')) throw new TransientError('SendFlow rate limit (403)', 'rate_limited');
+    throw new FatalError(`SendFlow 403: ${body.slice(0, 200)}`, 'http_403');
+  }
+  if (res.status >= 500) throw new TransientError(`SendFlow ${res.status} upstream error`, `http_${res.status}`);
+  throw new FatalError(`SendFlow ${label} ${res.status}: ${body.slice(0, 200)}`, `http_${res.status}`);
+}
+
+export function sendGroupImageMessage(
+  input: GroupTarget & { url: string; caption?: string },
+): Promise<void> {
+  return postGroupAction('/actions/send-image-message', input, { url: input.url, caption: input.caption ?? '' }, 'group image');
+}
+
+export function sendGroupAudioMessage(
+  input: GroupTarget & { url: string; ptt?: boolean },
+): Promise<void> {
+  return postGroupAction('/actions/send-audio-message', input, { url: input.url, ptt: input.ptt ?? false }, 'group audio');
+}
+
+/**
+ * Replay one parsed template message to the groups via the matching action
+ * endpoint. Unknown/empty messages are skipped (returns false).
+ */
+export async function sendTemplateMessageToGroups(
+  msg: TemplateMessage,
+  target: GroupTarget,
+): Promise<boolean> {
+  if (msg.type === 'text') {
+    if (!msg.text?.trim()) return false;
+    await sendGroupTextMessage({ ...target, messageText: msg.text });
+    return true;
+  }
+  if (msg.type === 'video') {
+    if (!msg.url) return false;
+    await sendGroupVideoMessage({ ...target, url: msg.url, caption: msg.caption });
+    return true;
+  }
+  if (msg.type === 'image') {
+    if (!msg.url) return false;
+    await sendGroupImageMessage({ ...target, url: msg.url, caption: msg.caption });
+    return true;
+  }
+  if (msg.type === 'audio') {
+    if (!msg.url) return false;
+    await sendGroupAudioMessage({ ...target, url: msg.url, ptt: msg.ptt });
+    return true;
+  }
+  return false;
 }

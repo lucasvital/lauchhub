@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { listReleases, listGroups } from '../../integrations/sendflow/client.js';
+import { listReleases, listGroups, listMessageTemplates } from '../../integrations/sendflow/client.js';
 import { FatalError } from '../../integrations/_shared/errors.js';
 
 /**
@@ -20,6 +20,19 @@ export async function registerSendflowRoutes(app: FastifyInstance): Promise<void
         return reply.code(200).send({ ok: false, error: 'no_api_key', items: [] });
       }
       app.log.error({ err }, 'sendflow_releases_failed');
+      return reply.code(200).send({ ok: false, error: 'upstream_error', items: [] });
+    }
+  });
+
+  app.get('/api/sendflow/templates', { preHandler: app.requireAuth }, async (_req, reply) => {
+    try {
+      const { items, stale, fetchedAt } = await listMessageTemplates();
+      return { ok: true, items, stale, fetched_at: fetchedAt };
+    } catch (err) {
+      if (err instanceof FatalError && err.code === 'no_credentials') {
+        return reply.code(200).send({ ok: false, error: 'no_api_key', items: [] });
+      }
+      app.log.error({ err }, 'sendflow_templates_failed');
       return reply.code(200).send({ ok: false, error: 'upstream_error', items: [] });
     }
   });

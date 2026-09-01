@@ -47,3 +47,16 @@ export function formatSaoPaulo(iso: string | null | undefined): string {
     `${pad(sp.getUTCHours())}:${pad(sp.getUTCMinutes())}:${pad(sp.getUTCSeconds())}`
   );
 }
+
+/**
+ * Current São Paulo wall-clock split into `{ date: "YYYY-MM-DD", time: "HH:MM" }`.
+ * Used by the broadcast scheduler to match configured "HH:MM" slots.
+ */
+export function saoPauloDateTime(iso: string = new Date().toISOString()): {
+  date: string;
+  time: string;
+} {
+  const s = formatSaoPaulo(iso); // "YYYY-MM-DD HH:MM:SS"
+  const [date = '', clock = ''] = s.split(' ');
+  return { date, time: clock.slice(0, 5) };
+}

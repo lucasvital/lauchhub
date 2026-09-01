@@ -144,6 +144,7 @@ export interface Campaign {
   sendflow_group_ids: string[];
   sendflow_account_id: string | null;
   sendflow_messages: Partial<Record<EventId, SendflowEventConfig>>;
+  sendflow_broadcasts: SendflowBroadcast[];
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -210,6 +211,28 @@ export interface SendflowTextMessage {
 
 export interface SendflowEventConfig {
   messages: SendflowTextMessage[];
+}
+
+export interface SendflowBroadcast {
+  id: string;
+  enabled: boolean;
+  template_id: string;
+  label?: string;
+  times: string[];
+}
+
+export interface SendflowTemplateMessage {
+  type: 'text' | 'image' | 'video' | 'audio' | 'unknown';
+  text?: string;
+  url?: string;
+  caption?: string;
+  ptt?: boolean;
+}
+
+export interface SendflowTemplateOption {
+  id: string;
+  title: string;
+  messages: SendflowTemplateMessage[];
 }
 
 export interface SendflowGroupOption {

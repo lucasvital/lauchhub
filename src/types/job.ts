@@ -131,6 +131,24 @@ export interface SendflowEventConfig {
 }
 
 /**
+ * A recurring SendFlow group broadcast (stored as campaigns.sendflow_broadcasts).
+ * References a SendFlow message template (message + hosted video) and posts it
+ * to the campaign's groups at fixed times of day, every day. Reuses the
+ * campaign's release/account/group_ids.
+ */
+export interface SendflowBroadcast {
+  /** Stable id (uuid) — also the idempotency key namespace. */
+  id: string;
+  enabled: boolean;
+  /** SendFlow message-template id whose messages get posted to the group(s). */
+  template_id: string;
+  /** Label for the UI (the template title at selection time). */
+  label?: string;
+  /** Times of day in America/Sao_Paulo, "HH:MM" 24h (e.g. ["09:00","20:00"]). */
+  times: string[];
+}
+
+/**
  * Per-campaign config slice relevant to one worker invocation.
  * Each worker reads the subset it cares about.
  *
