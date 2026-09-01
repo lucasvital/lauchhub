@@ -15,6 +15,7 @@ import {
   type MauticSegmentOption,
   type MauticTagOption,
   type MetaTemplateConfig,
+  type SendflowEventConfig,
   type SendflowGroupOption,
   type SendflowListResponse,
   type SendflowReleaseOption,
@@ -42,6 +43,10 @@ function emptyChatwootEventConfig(): ChatwootEventConfig {
 
 function emptyMetaTemplateConfig(): MetaTemplateConfig {
   return { template_name: '', template_params: {}, language: 'pt_BR' };
+}
+
+function emptySendflowEventConfig(): SendflowEventConfig {
+  return { messages: [] };
 }
 
 type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved';
@@ -321,10 +326,16 @@ export function CampaignDetailPage() {
           <SendflowPicker
             releaseId={c.sendflow_release_id}
             groupIds={c.sendflow_group_ids ?? []}
+            accountId={c.sendflow_account_id}
             onChangeRelease={(v) =>
-              patchCampaign.mutate({ sendflow_release_id: v, sendflow_group_ids: [] })
+              patchCampaign.mutate({
+                sendflow_release_id: v,
+                sendflow_group_ids: [],
+                sendflow_account_id: null,
+              })
             }
             onChangeGroups={(list) => patchCampaign.mutate({ sendflow_group_ids: list })}
+            onChangeAccount={(v) => patchCampaign.mutate({ sendflow_account_id: v })}
           />
         </div>
 
@@ -444,6 +455,13 @@ export function CampaignDetailPage() {
         chatwootInboxId={c.chatwoot_inbox_id}
         config={c.meta_templates}
         onSave={(next) => patchCampaign.mutate({ meta_templates: next })}
+        saving={patchCampaign.isPending}
+      />
+
+      <SendflowMessagesEditor
+        config={c.sendflow_messages}
+        accountId={c.sendflow_account_id}
+        onSave={(next) => patchCampaign.mutate({ sendflow_messages: next })}
         saving={patchCampaign.isPending}
       />
 
@@ -1487,6 +1505,113 @@ function SheetsPicker({
   );
 }
 
+function SendflowMessagesEditor({
+  config,
+  accountId,
+  onSave,
+  saving,
+}: {
+  config: Partial<Record<EventId, SendflowEventConfig>>;
+  accountId: string | null;
+  onSave: (next: Partial<Record<EventId, SendflowEventConfig>>) => void;
+  saving: boolean;
+}) {
+  const [selectedEvent, setSelectedEvent] = useState<EventId>(EVENTS[0].id);
+  const { draft, setDraft, status } = useAutoSavedEvent<SendflowEventConfig>({
+    selectedEvent,
+    config,
+    emptyDraft: emptySendflowEventConfig,
+    patch: onSave,
+    saving,
+  });
+
+  const messages = draft.messages ?? [];
+
+  function updateMessage(i: number, text: string) {
+    setDraft((d) => {
+      const next = [...(d.messages ?? [])];
+      next[i] = { text };
+      return { messages: next };
+    });
+  }
+  function addMessage() {
+    setDraft((d) => ({ messages: [...(d.messages ?? []), { text: '' }] }));
+  }
+  function removeMessage(i: number) {
+    setDraft((d) => ({ messages: (d.messages ?? []).filter((_, idx) => idx !== i) }));
+  }
+
+  return (
+    <Card accent="red" className="mt-6">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3>// SendFlow — mensagens por evento</h3>
+          <p className="mt-1.5 text-[11px] text-muted">
+            Mensagens de texto enviadas direto pro WhatsApp do comprador no evento, na ordem.
+            Variáveis suportadas: <code className="text-accent-2">{'{{contact.first_name}}'}</code>,{' '}
+            <code className="text-accent-2">{'{{contact.name}}'}</code>,{' '}
+            <code className="text-accent-2">{'{{order.product_name}}'}</code>,{' '}
+            <code className="text-accent-2">{'{{checkout_url}}'}</code>. Salva automaticamente.
+          </p>
+        </div>
+        <div className="flex items-end gap-3">
+          <SaveStatusBadge status={status} />
+          <label className="block min-w-[220px]">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Evento
+            </span>
+            <select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value as EventId)}>
+              {EVENTS.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {messages.length > 0 && !accountId && (
+        <Callout kind="warn">
+          Defina a "Conta que envia as mensagens" no bloco SendFlow acima — sem ela as mensagens não
+          são enviadas.
+        </Callout>
+      )}
+
+      <div className="space-y-3">
+        {messages.length === 0 && (
+          <p className="text-[11px] text-muted-2">
+            Nenhuma mensagem para este evento. Adicione uma abaixo.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="mt-2 w-5 text-right text-[11px] text-muted-2">{i + 1}.</span>
+            <textarea
+              rows={3}
+              value={m.text}
+              onChange={(e) => updateMessage(i, e.target.value)}
+              placeholder="Olá {{contact.first_name}}! Obrigado pela compra 🎉"
+              style={{ resize: 'vertical', fontFamily: '"JetBrains Mono", monospace' }}
+              className="flex-1"
+            />
+            <button
+              type="button"
+              onClick={() => removeMessage(i)}
+              className="mt-1 rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
+            >
+              remover
+            </button>
+          </div>
+        ))}
+        <Button variant="ghost" size="sm" onClick={addMessage}>
+          + mensagem
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function useSendflowReleases() {
   return useQuery({
     queryKey: ['sendflow', 'releases'],
@@ -1511,19 +1636,25 @@ function useSendflowGroups(releaseId: string | null) {
 function SendflowPicker({
   releaseId,
   groupIds,
+  accountId,
   onChangeRelease,
   onChangeGroups,
+  onChangeAccount,
 }: {
   releaseId: string | null;
   groupIds: string[];
+  accountId: string | null;
   onChangeRelease: (v: string | null) => void;
   onChangeGroups: (list: string[]) => void;
+  onChangeAccount: (v: string | null) => void;
 }) {
   const releasesQ = useSendflowReleases();
   const groupsQ = useSendflowGroups(releaseId);
 
   const releases = releasesQ.data?.items ?? [];
   const groups = groupsQ.data?.items ?? [];
+  const selectedRelease = releases.find((r) => r.id === releaseId);
+  const accountIds = selectedRelease?.accountIds ?? [];
   const noApiKey =
     releasesQ.data?.ok === false && releasesQ.data?.error === 'no_api_key';
 
@@ -1691,9 +1822,44 @@ function SendflowPicker({
         </div>
       )}
 
+      <div className="mt-3 border-t border-border pt-3">
+        <label className="block max-w-md">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+            Conta que envia as mensagens
+          </span>
+          {useManual || accountIds.length === 0 ? (
+            <input
+              defaultValue={accountId ?? ''}
+              key={`acc-${accountId ?? ''}`}
+              onBlur={(e) => {
+                const v = e.target.value.trim() || null;
+                if (v !== accountId) onChangeAccount(v);
+              }}
+              placeholder="accountId da conta WhatsApp no SendFlow"
+            />
+          ) : (
+            <select value={accountId ?? ''} onChange={(e) => onChangeAccount(e.target.value || null)}>
+              <option value="">— escolha a conta —</option>
+              {accountIds.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+              {accountId && !accountIds.includes(accountId) && (
+                <option value={accountId}>{accountId} (fora da lista)</option>
+              )}
+            </select>
+          )}
+          <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+            Só é usada para <strong>enviar mensagens</strong> no evento (config abaixo). A remoção de
+            grupo não precisa dela.
+          </span>
+        </label>
+      </div>
+
       <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
         Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — na compra, o comprador é
-        removido dos grupos selecionados.
+        removido dos grupos selecionados e/ou recebe as mensagens configuradas.
         {releasesQ.data?.stale && ' · lista em cache (rate limit da API)'}
       </p>
     </div>

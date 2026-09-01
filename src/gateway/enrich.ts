@@ -74,6 +74,9 @@ async function sliceConfig(
       return {
         sendflow_release_id: campaign.sendflow_release_id,
         sendflow_group_ids: campaign.sendflow_group_ids,
+        sendflow_account_id: campaign.sendflow_account_id,
+        sendflow_messages: campaign.sendflow_messages[event]?.messages ?? [],
+        coupon: campaign.coupon,
       };
   }
 }

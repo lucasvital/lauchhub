@@ -22,6 +22,7 @@ export interface RemoveParticipantsInput {
 export interface ReleaseSummary {
   id: string;
   name: string;
+  accountIds: string[];
 }
 
 export interface GroupSummary {
@@ -100,7 +101,11 @@ export async function listReleases(): Promise<CachedList<ReleaseSummary>> {
   const raw = Array.isArray(resp.json) ? (resp.json as Record<string, unknown>[]) : [];
   const items: ReleaseSummary[] = raw
     .filter((r) => !r.archived)
-    .map((r) => ({ id: String(r.id ?? ''), name: String(r.name ?? r.id ?? '') }))
+    .map((r) => ({
+      id: String(r.id ?? ''),
+      name: String(r.name ?? r.id ?? ''),
+      accountIds: Array.isArray(r.accountIds) ? r.accountIds.map(String) : [],
+    }))
     .filter((r) => r.id);
   releasesCache = { at: now, items };
   return { items, stale: false, fetchedAt: now };
@@ -153,6 +158,80 @@ export async function listGroups(releaseId: string): Promise<CachedList<GroupSum
     .filter((g) => g.id);
   groupsCache.set(releaseId, { at: now, items });
   return { items, stale: false, fetchedAt: now };
+}
+
+export interface SendTextInput {
+  accountId: string;
+  phoneNumber: string; // digits only, e.g. "5535991891712"
+  text: string;
+}
+
+/**
+ * Send a direct WhatsApp text message via a SendFlow connected account.
+ * POST /send-text-message/{accountId}. Rate limit: 200 ms between sends.
+ *
+ * Throws on failure (classified) — callers that batch may catch per-message.
+ */
+export async function sendTextMessage(input: SendTextInput): Promise<void> {
+  const apiKey = await getRawValue('sendflow_api_key');
+  if (!apiKey) {
+    throw new FatalError('SendFlow API key not configured — set it in /settings', 'no_credentials');
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/send-text-message/${encodeURIComponent(input.accountId)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ phoneNumber: input.phoneNumber, text: input.text }),
+    });
+  } catch (err) {
+    throw new TransientError(`SendFlow network error: ${String(err)}`, 'network');
+  }
+
+  let body = '';
+  try {
+    body = await res.text();
+  } catch {
+    /* ignore */
+  }
+
+  if (res.ok) {
+    // 200 does NOT guarantee delivery — inspect `state`/`success` before trusting.
+    let parsed: { success?: boolean; state?: string } = {};
+    try {
+      parsed = JSON.parse(body) as { success?: boolean; state?: string };
+    } catch {
+      /* non-JSON 200 — treat as sent */
+      return;
+    }
+    // Accept anything that isn't an explicit failure. Known success state: 'sent'.
+    if (parsed.success === false || parsed.state === 'failed' || parsed.state === 'error') {
+      throw new TransientError(
+        `SendFlow send-text not delivered (state=${parsed.state ?? 'unknown'})`,
+        'not_sent',
+      );
+    }
+    return;
+  }
+
+  // 409 = account not connected → fatal (retry won't help until reconnected).
+  if (res.status === 409) {
+    throw new FatalError(`SendFlow account not connected: ${body.slice(0, 200)}`, 'account_not_connected');
+  }
+  if (res.status === 403) {
+    if (body.includes('Limite de opera')) {
+      throw new TransientError('SendFlow rate limit (403)', 'rate_limited');
+    }
+    throw new FatalError(`SendFlow 403: ${body.slice(0, 200)}`, 'http_403');
+  }
+  if (res.status >= 500) {
+    throw new TransientError(`SendFlow ${res.status} upstream error`, `http_${res.status}`);
+  }
+  throw new FatalError(`SendFlow send-text ${res.status}: ${body.slice(0, 200)}`, `http_${res.status}`);
 }
 
 export async function removeParticipants(input: RemoveParticipantsInput): Promise<void> {
