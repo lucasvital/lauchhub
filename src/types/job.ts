@@ -5,7 +5,7 @@
  * enqueues into BullMQ queues and that every worker (Stories 3.1-3.4) consumes.
  */
 
-export type WorkerId = 'sheets' | 'chatwoot' | 'mautic' | 'meta';
+export type WorkerId = 'sheets' | 'chatwoot' | 'mautic' | 'meta' | 'sendflow';
 
 export type EventId =
   | 'compra_aprovada'
@@ -151,6 +151,12 @@ export interface JobConfigSlice {
   // Per-campaign discount coupon, appended to the checkout URL exposed to
   // templates as {{checkout_url}}.
   coupon?: string | null;
+
+  // SendFlow — remove the buyer from WhatsApp group(s) of a SendFlow release.
+  // API key is a global secret read at runtime; only the per-campaign target
+  // lives here.
+  sendflow_release_id?: string | null;
+  sendflow_group_ids?: string[];
 }
 
 export interface WebhookJob {
@@ -166,4 +172,10 @@ export interface WebhookJob {
   received_at: string;
 }
 
-export const WORKER_IDS: readonly WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta'] as const;
+export const WORKER_IDS: readonly WorkerId[] = [
+  'sheets',
+  'chatwoot',
+  'mautic',
+  'meta',
+  'sendflow',
+] as const;

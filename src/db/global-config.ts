@@ -10,6 +10,7 @@ const SECRET_KEYS = new Set([
   'chatwoot_token',
   'mautic_password',
   'google_service_account_json',
+  'sendflow_api_key',
 ]);
 
 export function isSecret(key: string): boolean {

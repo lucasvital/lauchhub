@@ -87,7 +87,7 @@ export const api = {
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
 
-export type WorkerId = 'sheets' | 'chatwoot' | 'mautic' | 'meta';
+export type WorkerId = 'sheets' | 'chatwoot' | 'mautic' | 'meta' | 'sendflow';
 
 export type EventId =
   | 'compra_aprovada'
@@ -140,6 +140,8 @@ export interface Campaign {
   match_by_product: boolean;
   checkout_links: string[];
   coupon: string | null;
+  sendflow_release_id: string | null;
+  sendflow_group_ids: string[];
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -216,4 +218,5 @@ export const WORKERS: { id: WorkerId; label: string; color: string; glyph: strin
   { id: 'chatwoot', label: 'Chatwoot', color: 'cyan', glyph: 'C' },
   { id: 'mautic', label: 'Mautic', color: 'purple', glyph: 'M' },
   { id: 'meta', label: 'Meta', color: 'amber', glyph: 'W' },
+  { id: 'sendflow', label: 'SendFlow', color: 'red', glyph: 'F' },
 ];

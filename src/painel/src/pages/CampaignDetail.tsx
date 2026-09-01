@@ -315,6 +315,44 @@ export function CampaignDetailPage() {
               desconto.
             </span>
           </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              SendFlow · release ID
+            </span>
+            <input
+              defaultValue={c.sendflow_release_id ?? ''}
+              onBlur={(e) => {
+                if (e.target.value !== (c.sendflow_release_id ?? ''))
+                  patchCampaign.mutate({ sendflow_release_id: e.target.value || null });
+              }}
+              placeholder="ID da campanha no SendFlow"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              SendFlow · IDs dos grupos
+            </span>
+            <input
+              defaultValue={(c.sendflow_group_ids ?? []).join(', ')}
+              onBlur={(e) => {
+                const list = e.target.value
+                  .split(/[\s,]+/)
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                if (JSON.stringify(list) !== JSON.stringify(c.sendflow_group_ids ?? []))
+                  patchCampaign.mutate({ sendflow_group_ids: list });
+              }}
+              placeholder="ex: 120363420152631339 (separado por vírgula)"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+              Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — na compra, o
+              comprador é removido desses grupos. A chave da API fica em{' '}
+              <Link to="/settings" className="underline">
+                Configurações
+              </Link>
+              .
+            </span>
+          </label>
         </div>
 
         <div className="mt-4 flex items-start justify-between gap-4 rounded border border-border bg-dim px-4 py-3">

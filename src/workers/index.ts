@@ -8,6 +8,7 @@ import { startSheetsWorker } from './sheets.worker.js';
 import { startChatwootWorker } from './chatwoot.worker.js';
 import { startMauticWorker } from './mautic.worker.js';
 import { startMetaWorker } from './meta.worker.js';
+import { startSendflowWorker } from './sendflow.worker.js';
 import type { Worker } from 'bullmq';
 
 async function startAll(): Promise<Worker[]> {
@@ -17,10 +18,11 @@ async function startAll(): Promise<Worker[]> {
     startChatwootWorker(),
     startMauticWorker(),
     startMetaWorker(),
+    startSendflowWorker(),
   ]);
 
   const workers: Worker[] = [];
-  const names = ['sheets', 'chatwoot', 'mautic', 'meta'];
+  const names = ['sheets', 'chatwoot', 'mautic', 'meta', 'sendflow'];
 
   for (const [i, r] of results.entries()) {
     if (r.status === 'fulfilled') {

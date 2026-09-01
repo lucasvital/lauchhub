@@ -32,6 +32,7 @@ export const QUEUE_NAMES: Record<WorkerId, string> = {
   chatwoot: 'chatwoot',
   mautic: 'mautic',
   meta: 'meta',
+  sendflow: 'sendflow',
 };
 
 export const queues: Record<WorkerId, Queue<WebhookJob>> = {
@@ -39,6 +40,7 @@ export const queues: Record<WorkerId, Queue<WebhookJob>> = {
   chatwoot: new Queue<WebhookJob>(QUEUE_NAMES.chatwoot, { connection, defaultJobOptions }),
   mautic: new Queue<WebhookJob>(QUEUE_NAMES.mautic, { connection, defaultJobOptions }),
   meta: new Queue<WebhookJob>(QUEUE_NAMES.meta, { connection, defaultJobOptions }),
+  sendflow: new Queue<WebhookJob>(QUEUE_NAMES.sendflow, { connection, defaultJobOptions }),
 };
 
 export async function ping(): Promise<boolean> {
