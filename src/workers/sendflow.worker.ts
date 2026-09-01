@@ -138,7 +138,6 @@ export async function processSendflowJob(
             accountId: accountId!,
             groupIds,
             messageText,
-            mentions: [phone],
           }),
         {
           tries: 3,
