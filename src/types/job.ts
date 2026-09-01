@@ -115,6 +115,22 @@ export interface MetaTemplateConfig {
 }
 
 /**
+ * A single SendFlow direct WhatsApp text message. `text` supports {{path}}
+ * templating resolved against the job context (e.g. {{contact.first_name}}).
+ */
+export interface SendflowTextMessage {
+  text: string;
+}
+
+/**
+ * Per-event SendFlow messages config (stored as campaigns.sendflow_messages).
+ * One entry per EventId; messages sent in order to the buyer's number.
+ */
+export interface SendflowEventConfig {
+  messages: SendflowTextMessage[];
+}
+
+/**
  * Per-campaign config slice relevant to one worker invocation.
  * Each worker reads the subset it cares about.
  *
@@ -157,6 +173,10 @@ export interface JobConfigSlice {
   // lives here.
   sendflow_release_id?: string | null;
   sendflow_group_ids?: string[];
+  // SendFlow — send direct WhatsApp text messages from this account. The
+  // messages are resolved for the current event by enrich().
+  sendflow_account_id?: string | null;
+  sendflow_messages?: SendflowTextMessage[];
 }
 
 export interface WebhookJob {

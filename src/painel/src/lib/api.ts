@@ -142,6 +142,8 @@ export interface Campaign {
   coupon: string | null;
   sendflow_release_id: string | null;
   sendflow_group_ids: string[];
+  sendflow_account_id: string | null;
+  sendflow_messages: Partial<Record<EventId, SendflowEventConfig>>;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -199,6 +201,15 @@ export interface ChatwootTemplateOption {
 export interface SendflowReleaseOption {
   id: string;
   name: string;
+  accountIds: string[];
+}
+
+export interface SendflowTextMessage {
+  text: string;
+}
+
+export interface SendflowEventConfig {
+  messages: SendflowTextMessage[];
 }
 
 export interface SendflowGroupOption {

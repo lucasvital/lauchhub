@@ -4,6 +4,7 @@ import type {
   EventId,
   MauticEventConfig,
   MetaTemplateConfig,
+  SendflowEventConfig,
   WorkerId,
 } from '../types/job.js';
 
@@ -37,6 +38,10 @@ export interface CampaignRow {
   /** SendFlow release (campaign) id + group ids to remove buyers from. */
   sendflow_release_id: string | null;
   sendflow_group_ids: string[];
+  /** SendFlow connected account that sends direct messages. */
+  sendflow_account_id: string | null;
+  /** Per-event direct WhatsApp text messages sent via SendFlow. */
+  sendflow_messages: Partial<Record<EventId, SendflowEventConfig>>;
   active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -62,6 +67,8 @@ export interface CampaignCreateInput {
   coupon?: string | null;
   sendflow_release_id?: string | null;
   sendflow_group_ids?: string[];
+  sendflow_account_id?: string | null;
+  sendflow_messages?: Partial<Record<EventId, SendflowEventConfig>>;
   active?: boolean;
 }
 
@@ -84,6 +91,8 @@ export interface CampaignUpdateInput {
   coupon?: string | null;
   sendflow_release_id?: string | null;
   sendflow_group_ids?: string[];
+  sendflow_account_id?: string | null;
+  sendflow_messages?: Partial<Record<EventId, SendflowEventConfig>>;
 }
 
 const ALL_COLS = `
@@ -93,7 +102,8 @@ const ALL_COLS = `
   mautic_instance_id, mautic_event_config,
   meta_templates,
   enabled_workers, match_by_product, checkout_links, coupon,
-  sendflow_release_id, sendflow_group_ids, active, created_at, updated_at
+  sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
+  active, created_at, updated_at
 `;
 
 export async function findByToken(token: string): Promise<CampaignRow | null> {
@@ -153,14 +163,14 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         mautic_instance_id, mautic_event_config,
         meta_templates,
         enabled_workers, match_by_product, checkout_links, coupon,
-        sendflow_release_id, sendflow_group_ids, active)
+        sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages, active)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
              $14::jsonb,$15,$16::jsonb,$17,
-             $18,$19::jsonb,$20)
+             $18,$19::jsonb,$20,$21::jsonb,$22)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -182,6 +192,8 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       input.coupon ?? null,
       input.sendflow_release_id ?? null,
       JSON.stringify(input.sendflow_group_ids ?? []),
+      input.sendflow_account_id ?? null,
+      JSON.stringify(input.sendflow_messages ?? {}),
       input.active ?? true,
     ],
   );
@@ -217,6 +229,8 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.coupon !== undefined) setField('coupon', patch.coupon);
   if (patch.sendflow_release_id !== undefined) setField('sendflow_release_id', patch.sendflow_release_id);
   if (patch.sendflow_group_ids !== undefined) setField('sendflow_group_ids', patch.sendflow_group_ids, true);
+  if (patch.sendflow_account_id !== undefined) setField('sendflow_account_id', patch.sendflow_account_id);
+  if (patch.sendflow_messages !== undefined) setField('sendflow_messages', patch.sendflow_messages, true);
 
   if (fields.length === 0) {
     return findById(id);

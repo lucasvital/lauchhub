@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   removeParticipants,
+  sendTextMessage,
   listReleases,
   listGroups,
 } from '../../src/integrations/sendflow/client.js';
@@ -83,6 +84,43 @@ describe('removeParticipants', () => {
   });
 });
 
+describe('sendTextMessage', () => {
+  it('POSTs to /send-text-message/{accountId} with phone + text', async () => {
+    const fn = mockFetch(200, '{"success":true,"state":"sent"}');
+    await sendTextMessage({ accountId: 'acc-9', phoneNumber: '5535991891712', text: 'oi João' });
+
+    expect(fn).toHaveBeenCalledTimes(1);
+    const [url, init] = fn.mock.calls[0];
+    expect(url).toBe('https://sendapi.sendflow.pro/send-text-message/acc-9');
+    expect((init as { headers: Record<string, string> }).headers.Authorization).toBe('Bearer sk-test');
+    expect(JSON.parse((init as { body: string }).body)).toEqual({
+      phoneNumber: '5535991891712',
+      text: 'oi João',
+    });
+  });
+
+  it('throws when a 200 reports success:false', async () => {
+    mockFetch(200, '{"success":false}');
+    await expect(
+      sendTextMessage({ accountId: 'a', phoneNumber: '1', text: 't' }),
+    ).rejects.toBeInstanceOf(TransientError);
+  });
+
+  it('treats 409 account-not-connected as fatal', async () => {
+    mockFetch(409, 'account-not-connected');
+    await expect(
+      sendTextMessage({ accountId: 'a', phoneNumber: '1', text: 't' }),
+    ).rejects.toBeInstanceOf(FatalError);
+  });
+
+  it('treats a rate-limit 403 as transient', async () => {
+    mockFetch(403, 'Limite de operações atingido!');
+    await expect(
+      sendTextMessage({ accountId: 'a', phoneNumber: '1', text: 't' }),
+    ).rejects.toBeInstanceOf(TransientError);
+  });
+});
+
 function mockJsonFetch(status: number, json: unknown): ReturnType<typeof vi.fn> {
   const fn = vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
@@ -100,25 +138,25 @@ describe('listReleases', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-01T00:00:00Z'));
     const fn = mockJsonFetch(200, [
-      { id: 'r1', name: 'Campanha A' },
+      { id: 'r1', name: 'Campanha A', accountIds: ['acc-1'] },
       { id: 'r2', name: 'Arquivada', archived: true },
     ]);
 
     const first = await listReleases();
-    expect(first.items).toEqual([{ id: 'r1', name: 'Campanha A' }]);
+    expect(first.items).toEqual([{ id: 'r1', name: 'Campanha A', accountIds: ['acc-1'] }]);
     expect(first.stale).toBe(false);
     expect(fn).toHaveBeenCalledTimes(1);
 
     // Second call within TTL: no new fetch, same data.
     const second = await listReleases();
-    expect(second.items).toEqual([{ id: 'r1', name: 'Campanha A' }]);
+    expect(second.items).toEqual([{ id: 'r1', name: 'Campanha A', accountIds: ['acc-1'] }]);
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it('serves stale cache when a refresh hits the rate limit', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-01T01:00:00Z'));
-    mockJsonFetch(200, [{ id: 'rr', name: 'Fresh' }]);
+    mockJsonFetch(200, [{ id: 'rr', name: 'Fresh', accountIds: [] }]);
     await listReleases();
 
     // Advance past the 5-min TTL, next fetch 403s → stale cache returned.
@@ -128,7 +166,7 @@ describe('listReleases', () => {
 
     const res = await listReleases();
     expect(res.stale).toBe(true);
-    expect(res.items).toEqual([{ id: 'rr', name: 'Fresh' }]);
+    expect(res.items).toEqual([{ id: 'rr', name: 'Fresh', accountIds: [] }]);
   });
 });
 
