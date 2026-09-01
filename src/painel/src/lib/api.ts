@@ -217,6 +217,7 @@ export interface SendflowGroupOption {
   name: string;
   participantsAmount: number | null;
   full: boolean;
+  docId: string;
 }
 
 export interface SendflowListResponse<T> {

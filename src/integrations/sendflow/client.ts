@@ -26,10 +26,28 @@ export interface ReleaseSummary {
 }
 
 export interface GroupSummary {
+  /** WhatsApp group GID (120363...), used by the send/remove endpoints. */
   id: string;
   name: string;
   participantsAmount: number | null;
   full: boolean;
+  /** SendFlow release-group document id — shown for reference/debug only. */
+  docId: string;
+}
+
+/**
+ * WhatsApp group ids look like "120363XXXXXXXXXX" (optionally "@g.us").
+ * SendFlow's group listing exposes the GID inconsistently — sometimes in `id`,
+ * sometimes in `gid`/`jid` (where `id` is instead the release-group doc id).
+ * Pick the field that actually looks like a WhatsApp GID; the send/remove
+ * endpoints require it (NOT the doc id).
+ */
+function pickGroupGid(g: Record<string, unknown>): string {
+  const candidates = [g.id, g.gid, g.jid]
+    .map((v) => String(v ?? '').replace(/@g\.us$/, ''))
+    .filter(Boolean);
+  const gid = candidates.find((v) => /^120363\d+$/.test(v));
+  return gid ?? String(g.id ?? '');
 }
 
 /** Result of a cached listing — items plus provenance for the UI to hint. */
@@ -149,11 +167,12 @@ export async function listGroups(releaseId: string): Promise<CachedList<GroupSum
   }
   const items: GroupSummary[] = flat
     .map((g) => ({
-      id: String(g.id ?? ''),
+      id: pickGroupGid(g),
       name: String(g.name ?? g.id ?? ''),
       participantsAmount:
         typeof g.participantsAmount === 'number' ? g.participantsAmount : null,
       full: g.full === true,
+      docId: String(g.id ?? ''),
     }))
     .filter((g) => g.id);
   groupsCache.set(releaseId, { at: now, items });

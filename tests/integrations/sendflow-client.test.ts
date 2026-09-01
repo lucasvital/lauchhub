@@ -221,18 +221,41 @@ describe('listReleases', () => {
 });
 
 describe('listGroups', () => {
-  it('flattens the nested [[...]] response and keeps id/name/count/full', async () => {
+  it('flattens the nested [[...]] response and picks the GID from id', async () => {
     mockJsonFetch(200, [
       [
-        { id: 'g1', name: 'Grupo 1', participantsAmount: 42, full: false },
-        { id: 'g2', name: 'Grupo 2', participantsAmount: 256, full: true },
+        { id: '120363000000000001', name: 'Grupo 1', participantsAmount: 42, full: false },
+        { id: '120363000000000002', name: 'Grupo 2', participantsAmount: 256, full: true },
       ],
     ]);
     const res = await listGroups('rel-flatten-unique');
     expect(res.items).toEqual([
-      { id: 'g1', name: 'Grupo 1', participantsAmount: 42, full: false },
-      { id: 'g2', name: 'Grupo 2', participantsAmount: 256, full: true },
+      { id: '120363000000000001', name: 'Grupo 1', participantsAmount: 42, full: false, docId: '120363000000000001' },
+      { id: '120363000000000002', name: 'Grupo 2', participantsAmount: 256, full: true, docId: '120363000000000002' },
     ]);
+  });
+
+  it('uses the GID from gid/jid when id is a SendFlow doc id, exposing docId', async () => {
+    mockJsonFetch(200, [
+      [
+        {
+          id: '5fH9UdQWnt31yUWL6Fvp',
+          gid: '120363999999999999@g.us',
+          jid: '120363999999999999@g.us',
+          name: 'Grupo Doc',
+          participantsAmount: 10,
+          full: false,
+        },
+      ],
+    ]);
+    const res = await listGroups('rel-docid-unique');
+    expect(res.items[0]).toEqual({
+      id: '120363999999999999',
+      name: 'Grupo Doc',
+      participantsAmount: 10,
+      full: false,
+      docId: '5fH9UdQWnt31yUWL6Fvp',
+    });
   });
 
   it('returns an empty list (not an error) on 404', async () => {

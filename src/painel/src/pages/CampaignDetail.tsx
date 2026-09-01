@@ -1793,7 +1793,13 @@ function SendflowPicker({
                       onChange={() => toggleGroup(g.id)}
                       className="h-3.5 w-3.5"
                     />
-                    <span className="flex-1 truncate text-text">{g.name}</span>
+                    <span className="flex flex-1 flex-col truncate">
+                      <span className="truncate text-text">{g.name}</span>
+                      <span className="truncate text-[9px] text-muted-2">
+                        id: {g.id}
+                        {g.id.startsWith('120363') ? '' : ' ⚠ não é GID'}
+                      </span>
+                    </span>
                     {g.participantsAmount != null && (
                       <span className="text-muted-2">{g.participantsAmount}</span>
                     )}
