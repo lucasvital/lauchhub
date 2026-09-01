@@ -1545,11 +1545,12 @@ function SendflowMessagesEditor({
     <Card accent="red" className="mt-6">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3>// SendFlow — mensagens por evento</h3>
+          <h3>// SendFlow — mensagens no grupo por evento</h3>
           <p className="mt-1.5 text-[11px] text-muted">
-            Mensagens de texto enviadas direto pro WhatsApp do comprador no evento, na ordem.
-            Variáveis suportadas: <code className="text-accent-2">{'{{contact.first_name}}'}</code>,{' '}
-            <code className="text-accent-2">{'{{contact.name}}'}</code>,{' '}
+            Postadas <strong>no(s) grupo(s)</strong> selecionados no bloco acima (todos veem), na
+            ordem, antes de remover o comprador. Marque o comprador com{' '}
+            <code className="text-accent-2">@{'{{mention}}'}</code>. Outras variáveis:{' '}
+            <code className="text-accent-2">{'{{contact.first_name}}'}</code>,{' '}
             <code className="text-accent-2">{'{{order.product_name}}'}</code>,{' '}
             <code className="text-accent-2">{'{{checkout_url}}'}</code>. Salva automaticamente.
           </p>
@@ -1573,8 +1574,8 @@ function SendflowMessagesEditor({
 
       {messages.length > 0 && !accountId && (
         <Callout kind="warn">
-          Defina a "Conta que envia as mensagens" no bloco SendFlow acima — sem ela as mensagens não
-          são enviadas.
+          Defina a "Conta que envia as mensagens" e selecione o(s) grupo(s) no bloco SendFlow acima —
+          sem eles a mensagem não é postada no grupo.
         </Callout>
       )}
 
@@ -1591,7 +1592,7 @@ function SendflowMessagesEditor({
               rows={3}
               value={m.text}
               onChange={(e) => updateMessage(i, e.target.value)}
-              placeholder="Olá {{contact.first_name}}! Obrigado pela compra 🎉"
+              placeholder="Parabéns @{{mention}}, você acabou de garantir sua vaga! 🎉"
               style={{ resize: 'vertical', fontFamily: '"JetBrains Mono", monospace' }}
               className="flex-1"
             />
@@ -1726,7 +1727,7 @@ function SendflowPicker({
                   .filter(Boolean);
                 if (JSON.stringify(list) !== JSON.stringify(groupIds)) onChangeGroups(list);
               }}
-              placeholder="ex: 120363420152631339 (vírgula)"
+              placeholder="GID do grupo, ex: 120363420152631339 (NÃO o doc id — vírgula)"
             />
           </label>
         </div>
@@ -1858,8 +1859,9 @@ function SendflowPicker({
       </div>
 
       <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
-        Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — na compra, o comprador é
-        removido dos grupos selecionados e/ou recebe as mensagens configuradas.
+        Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — no evento, a mensagem é
+        postada no(s) grupo(s) marcando o comprador e, em seguida, ele é removido. Prefira selecionar
+        os grupos na lista (o id certo é o GID <code>120363…</code>, não o doc id).
         {releasesQ.data?.stale && ' · lista em cache (rate limit da API)'}
       </p>
     </div>
