@@ -196,6 +196,26 @@ export interface ChatwootTemplateOption {
   components: { type: string; text?: string }[];
 }
 
+export interface SendflowReleaseOption {
+  id: string;
+  name: string;
+}
+
+export interface SendflowGroupOption {
+  id: string;
+  name: string;
+  participantsAmount: number | null;
+  full: boolean;
+}
+
+export interface SendflowListResponse<T> {
+  ok: boolean;
+  items: T[];
+  stale?: boolean;
+  fetched_at?: number;
+  error?: string;
+}
+
 export interface DashboardSummary {
   ok: true;
   byWorker: Record<WorkerId, { waiting: number; active: number; failed: number; completed: number; delayed: number }>;

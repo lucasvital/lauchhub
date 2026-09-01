@@ -15,6 +15,9 @@ import {
   type MauticSegmentOption,
   type MauticTagOption,
   type MetaTemplateConfig,
+  type SendflowGroupOption,
+  type SendflowListResponse,
+  type SendflowReleaseOption,
   type SheetTabOption,
   type WorkerId,
   EVENTS,
@@ -315,44 +318,14 @@ export function CampaignDetailPage() {
               desconto.
             </span>
           </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-              SendFlow · release ID
-            </span>
-            <input
-              defaultValue={c.sendflow_release_id ?? ''}
-              onBlur={(e) => {
-                if (e.target.value !== (c.sendflow_release_id ?? ''))
-                  patchCampaign.mutate({ sendflow_release_id: e.target.value || null });
-              }}
-              placeholder="ID da campanha no SendFlow"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-              SendFlow · IDs dos grupos
-            </span>
-            <input
-              defaultValue={(c.sendflow_group_ids ?? []).join(', ')}
-              onBlur={(e) => {
-                const list = e.target.value
-                  .split(/[\s,]+/)
-                  .map((s) => s.trim())
-                  .filter(Boolean);
-                if (JSON.stringify(list) !== JSON.stringify(c.sendflow_group_ids ?? []))
-                  patchCampaign.mutate({ sendflow_group_ids: list });
-              }}
-              placeholder="ex: 120363420152631339 (separado por vírgula)"
-            />
-            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
-              Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — na compra, o
-              comprador é removido desses grupos. A chave da API fica em{' '}
-              <Link to="/settings" className="underline">
-                Configurações
-              </Link>
-              .
-            </span>
-          </label>
+          <SendflowPicker
+            releaseId={c.sendflow_release_id}
+            groupIds={c.sendflow_group_ids ?? []}
+            onChangeRelease={(v) =>
+              patchCampaign.mutate({ sendflow_release_id: v, sendflow_group_ids: [] })
+            }
+            onChangeGroups={(list) => patchCampaign.mutate({ sendflow_group_ids: list })}
+          />
         </div>
 
         <div className="mt-4 flex items-start justify-between gap-4 rounded border border-border bg-dim px-4 py-3">
@@ -1510,6 +1483,219 @@ function SheetsPicker({
           )}
         </select>
       </label>
+    </div>
+  );
+}
+
+function useSendflowReleases() {
+  return useQuery({
+    queryKey: ['sendflow', 'releases'],
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      api.get<SendflowListResponse<SendflowReleaseOption>>('/api/sendflow/releases'),
+  });
+}
+
+function useSendflowGroups(releaseId: string | null) {
+  return useQuery({
+    queryKey: ['sendflow', 'groups', releaseId],
+    enabled: Boolean(releaseId),
+    staleTime: 10 * 60_000,
+    queryFn: () =>
+      api.get<SendflowListResponse<SendflowGroupOption>>(
+        `/api/sendflow/releases/${encodeURIComponent(releaseId!)}/groups`,
+      ),
+  });
+}
+
+function SendflowPicker({
+  releaseId,
+  groupIds,
+  onChangeRelease,
+  onChangeGroups,
+}: {
+  releaseId: string | null;
+  groupIds: string[];
+  onChangeRelease: (v: string | null) => void;
+  onChangeGroups: (list: string[]) => void;
+}) {
+  const releasesQ = useSendflowReleases();
+  const groupsQ = useSendflowGroups(releaseId);
+
+  const releases = releasesQ.data?.items ?? [];
+  const groups = groupsQ.data?.items ?? [];
+  const noApiKey =
+    releasesQ.data?.ok === false && releasesQ.data?.error === 'no_api_key';
+
+  // Manual fallback: on when the API can't be used (no key / upstream down) or
+  // the user opts in. Lets the operator paste IDs the same way as before.
+  const [manual, setManual] = useState(false);
+  const useManual = manual || noApiKey;
+
+  function toggleGroup(id: string) {
+    onChangeGroups(
+      groupIds.includes(id) ? groupIds.filter((g) => g !== id) : [...groupIds, id],
+    );
+  }
+
+  return (
+    <div className="block sm:col-span-2 rounded border border-border bg-dim px-4 py-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+          SendFlow · remover comprador do grupo
+        </span>
+        {!noApiKey && (
+          <button
+            type="button"
+            onClick={() => setManual((m) => !m)}
+            className="text-[11px] text-muted-2 hover:text-accent"
+          >
+            {useManual ? '↺ usar lista da API' : '✎ digitar IDs manual'}
+          </button>
+        )}
+      </div>
+
+      {noApiKey && (
+        <p className="mb-3 text-[10px] leading-relaxed text-accent-4">
+          Chave da API do SendFlow não configurada — cadastre em{' '}
+          <Link to="/settings" className="underline">
+            Configurações
+          </Link>{' '}
+          pra escolher release e grupos numa lista. Enquanto isso, dá pra digitar os IDs na mão.
+        </p>
+      )}
+
+      {useManual ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+              Release ID
+            </span>
+            <input
+              defaultValue={releaseId ?? ''}
+              key={`rel-${releaseId ?? ''}`}
+              onBlur={(e) => {
+                const v = e.target.value.trim() || null;
+                if (v !== releaseId) onChangeRelease(v);
+              }}
+              placeholder="ID da campanha no SendFlow"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+              IDs dos grupos
+            </span>
+            <input
+              defaultValue={groupIds.join(', ')}
+              key={`grp-${groupIds.join(',')}`}
+              onBlur={(e) => {
+                const list = e.target.value
+                  .split(/[\s,]+/)
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                if (JSON.stringify(list) !== JSON.stringify(groupIds)) onChangeGroups(list);
+              }}
+              placeholder="ex: 120363420152631339 (vírgula)"
+            />
+          </label>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1.4fr]">
+          <label className="block">
+            <div className="flex items-end justify-between">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+                Release
+              </span>
+              <PickerStatus
+                isLoading={releasesQ.isLoading}
+                isError={releasesQ.isError || releasesQ.data?.ok === false}
+                count={releases.length}
+                onRefetch={() => releasesQ.refetch()}
+              />
+            </div>
+            <select
+              value={releaseId ?? ''}
+              onChange={(e) => onChangeRelease(e.target.value || null)}
+              disabled={releasesQ.isLoading}
+            >
+              <option value="">— escolha a campanha —</option>
+              {releases.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+              {releaseId && !releases.find((r) => r.id === releaseId) && (
+                <option value={releaseId}>{releaseId} (fora da lista)</option>
+              )}
+            </select>
+          </label>
+
+          <div className="block">
+            <div className="flex items-end justify-between">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+                Grupos ({groupIds.length} selecionado{groupIds.length === 1 ? '' : 's'})
+              </span>
+              {releaseId && (
+                <PickerStatus
+                  isLoading={groupsQ.isLoading}
+                  isError={groupsQ.isError || groupsQ.data?.ok === false}
+                  count={groups.length}
+                  onRefetch={() => groupsQ.refetch()}
+                />
+              )}
+            </div>
+            {!releaseId ? (
+              <p className="text-[10px] text-muted-2">Escolha uma release pra listar os grupos.</p>
+            ) : groups.length === 0 && !groupsQ.isLoading ? (
+              <p className="text-[10px] text-muted-2">Nenhum grupo encontrado nesta release.</p>
+            ) : (
+              <div className="max-h-40 space-y-1 overflow-y-auto rounded border border-border bg-surface p-2">
+                {groups.map((g) => (
+                  <label
+                    key={g.id}
+                    className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-dim"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={groupIds.includes(g.id)}
+                      onChange={() => toggleGroup(g.id)}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span className="flex-1 truncate text-text">{g.name}</span>
+                    {g.participantsAmount != null && (
+                      <span className="text-muted-2">{g.participantsAmount}</span>
+                    )}
+                    {g.full && <span className="text-accent-4">cheio</span>}
+                  </label>
+                ))}
+                {/* Selected ids no longer present in the fetched list — keep them visible. */}
+                {groupIds
+                  .filter((id) => !groups.find((g) => g.id === id))
+                  .map((id) => (
+                    <label
+                      key={id}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-dim"
+                    >
+                      <input
+                        type="checkbox"
+                        checked
+                        onChange={() => toggleGroup(id)}
+                        className="h-3.5 w-3.5"
+                      />
+                      <span className="flex-1 truncate text-muted-2">{id} (fora da lista)</span>
+                    </label>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
+        Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — na compra, o comprador é
+        removido dos grupos selecionados.
+        {releasesQ.data?.stale && ' · lista em cache (rate limit da API)'}
+      </p>
     </div>
   );
 }
