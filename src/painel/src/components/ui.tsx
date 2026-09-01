@@ -86,6 +86,7 @@ const workerBg: Record<string, string> = {
   chatwoot: 'bg-accent-2',
   mautic: 'bg-accent',
   meta: 'bg-accent-4',
+  sendflow: 'bg-accent-5',
 };
 
 export function WorkerChip({

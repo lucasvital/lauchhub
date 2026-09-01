@@ -22,6 +22,7 @@ export function SettingsPage() {
 
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState(false);
+  const [sendflowRevealed, setSendflowRevealed] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export function SettingsPage() {
       setDraft({
         google_service_account_email: q.data.settings.google_service_account_email ?? '',
         google_service_account_json: q.data.settings.google_service_account_json ?? '',
+        sendflow_api_key: q.data.settings.sendflow_api_key ?? '',
       });
     }
   }, [q.data]);
@@ -64,6 +66,7 @@ export function SettingsPage() {
   }
 
   const jsonMasked = isMasked(draft.google_service_account_json);
+  const sendflowKeyMasked = isMasked(draft.sendflow_api_key);
 
   return (
     <div>
@@ -148,6 +151,47 @@ export function SettingsPage() {
             </label>
           </div>
           {testStatus && <div className="mt-3 text-[11px] text-muted">{testStatus}</div>}
+        </Card>
+
+        <Card accent="red">
+          <h3 className="mb-3">// SendFlow</h3>
+          <p className="text-[11px] text-muted">
+            Chave de API global (uma conta SendFlow). Usada pelo worker para remover compradores
+            de grupos de WhatsApp. O release e os IDs de grupo são configurados por campanha em{' '}
+            <Link to="/campaigns" className="underline">
+              Campanhas
+            </Link>
+            .
+          </p>
+          <div className="mt-4">
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                API Key
+              </span>
+              <div className="relative">
+                <input
+                  type={sendflowKeyMasked && !sendflowRevealed ? 'text' : 'password'}
+                  value={draft.sendflow_api_key ?? ''}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, sendflow_api_key: e.target.value }))
+                  }
+                  placeholder="Bearer token da API SendFlow"
+                />
+                {sendflowKeyMasked && !sendflowRevealed && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft((d) => ({ ...d, sendflow_api_key: '' }));
+                      setSendflowRevealed(true);
+                    }}
+                    className="absolute right-2 top-2 rounded-sm border border-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted hover:text-text"
+                  >
+                    TROCAR
+                  </button>
+                )}
+              </div>
+            </label>
+          </div>
         </Card>
 
         <Card>

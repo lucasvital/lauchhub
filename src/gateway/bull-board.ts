@@ -14,7 +14,7 @@ export async function registerBullBoard(app: FastifyInstance): Promise<void> {
   const serverAdapter = new FastifyAdapter();
   serverAdapter.setBasePath('/queue');
 
-  const workerIds: WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta'];
+  const workerIds: WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta', 'sendflow'];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const adapters = workerIds.map((id) => new BullMQAdapter(queues[id] as any) as any);
   createBullBoard({ queues: adapters, serverAdapter });

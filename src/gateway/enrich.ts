@@ -68,6 +68,13 @@ async function sliceConfig(
         coupon: campaign.coupon,
       };
     }
+    case 'sendflow':
+      // API key is a global secret read at runtime by the worker; only the
+      // per-campaign target (release + groups) travels in the job.
+      return {
+        sendflow_release_id: campaign.sendflow_release_id,
+        sendflow_group_ids: campaign.sendflow_group_ids,
+      };
   }
 }
 

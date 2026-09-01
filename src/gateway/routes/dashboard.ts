@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { queues } from '../../queue/index.js';
 import type { WorkerId } from '../../types/job.js';
 
-const WORKER_IDS: WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta'];
+const WORKER_IDS: WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta', 'sendflow'];
 
 /**
  * GET /api/dashboard/summary
@@ -18,6 +18,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
       chatwoot: { waiting: 0, active: 0, failed: 0, completed: 0, delayed: 0 },
       mautic: { waiting: 0, active: 0, failed: 0, completed: 0, delayed: 0 },
       meta: { waiting: 0, active: 0, failed: 0, completed: 0, delayed: 0 },
+      sendflow: { waiting: 0, active: 0, failed: 0, completed: 0, delayed: 0 },
     };
 
     await Promise.all(

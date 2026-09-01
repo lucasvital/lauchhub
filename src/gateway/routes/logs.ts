@@ -4,7 +4,7 @@ import * as unmatchedDb from '../../db/unmatched.js';
 import * as webhookEventsDb from '../../db/webhook-events.js';
 import type { WorkerId } from '../../types/job.js';
 
-const WORKER_IDS: WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta'];
+const WORKER_IDS: WorkerId[] = ['sheets', 'chatwoot', 'mautic', 'meta', 'sendflow'];
 
 interface DlqItem {
   id: string;
