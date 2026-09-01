@@ -1548,9 +1548,9 @@ function SendflowMessagesEditor({
           <h3>// SendFlow — mensagens no grupo por evento</h3>
           <p className="mt-1.5 text-[11px] text-muted">
             Postadas <strong>no(s) grupo(s)</strong> selecionados no bloco acima (todos veem), na
-            ordem, antes de remover o comprador. Marque o comprador com{' '}
-            <code className="text-accent-2">@{'{{mention}}'}</code>. Outras variáveis:{' '}
+            ordem, antes de remover o comprador. Variáveis:{' '}
             <code className="text-accent-2">{'{{contact.first_name}}'}</code>,{' '}
+            <code className="text-accent-2">{'{{contact.name}}'}</code>,{' '}
             <code className="text-accent-2">{'{{order.product_name}}'}</code>,{' '}
             <code className="text-accent-2">{'{{checkout_url}}'}</code>. Salva automaticamente.
           </p>
@@ -1592,7 +1592,7 @@ function SendflowMessagesEditor({
               rows={3}
               value={m.text}
               onChange={(e) => updateMessage(i, e.target.value)}
-              placeholder="Parabéns @{{mention}}, você acabou de garantir sua vaga! 🎉"
+              placeholder="Parabéns {{contact.first_name}}, você acabou de garantir sua vaga! 🎉"
               style={{ resize: 'vertical', fontFamily: '"JetBrains Mono", monospace' }}
               className="flex-1"
             />

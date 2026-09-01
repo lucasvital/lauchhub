@@ -109,7 +109,7 @@ describe('processSendflowJob — group messages', () => {
     const result = await processSendflowJob(
       makeJob({
         accountId: 'acc-9',
-        messages: [{ text: 'Parabéns @{{mention}} pela compra de {{order.product_name}}!' }],
+        messages: [{ text: 'Parabéns {{contact.first_name}} pela compra de {{order.product_name}}!' }],
       }),
       { remove, sendGroup, sleepMs: 0 },
     );
@@ -118,8 +118,7 @@ describe('processSendflowJob — group messages', () => {
       releaseId: 'rel-123',
       accountId: 'acc-9',
       groupIds: ['120363000000000001'],
-      messageText: 'Parabéns @5535991891712 pela compra de Imersão!',
-      mentions: ['5535991891712'],
+      messageText: 'Parabéns João pela compra de Imersão!',
     });
     expect(order).toEqual(['post', 'remove']); // message first, then remove
     expect(result).toMatchObject({ posted: 1, removed: 1, failed: 0 });
