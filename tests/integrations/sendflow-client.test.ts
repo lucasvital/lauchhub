@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { removeParticipants } from '../../src/integrations/sendflow/client.js';
+import {
+  removeParticipants,
+  listReleases,
+  listGroups,
+} from '../../src/integrations/sendflow/client.js';
 import { FatalError, TransientError } from '../../src/integrations/_shared/errors.js';
 
 // The client reads the API key from global_config at runtime.
@@ -76,5 +80,77 @@ describe('removeParticipants', () => {
     await expect(
       removeParticipants({ releaseId: 'r', groupIds: ['g'], participants: ['1'] }),
     ).rejects.toBeInstanceOf(FatalError);
+  });
+});
+
+function mockJsonFetch(status: number, json: unknown): ReturnType<typeof vi.fn> {
+  const fn = vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(json),
+  });
+  global.fetch = fn as unknown as typeof fetch;
+  return fn;
+}
+
+describe('listReleases', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('maps and drops archived releases, then serves from cache within TTL', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'));
+    const fn = mockJsonFetch(200, [
+      { id: 'r1', name: 'Campanha A' },
+      { id: 'r2', name: 'Arquivada', archived: true },
+    ]);
+
+    const first = await listReleases();
+    expect(first.items).toEqual([{ id: 'r1', name: 'Campanha A' }]);
+    expect(first.stale).toBe(false);
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    // Second call within TTL: no new fetch, same data.
+    const second = await listReleases();
+    expect(second.items).toEqual([{ id: 'r1', name: 'Campanha A' }]);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves stale cache when a refresh hits the rate limit', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-01T01:00:00Z'));
+    mockJsonFetch(200, [{ id: 'rr', name: 'Fresh' }]);
+    await listReleases();
+
+    // Advance past the 5-min TTL, next fetch 403s → stale cache returned.
+    vi.setSystemTime(new Date('2026-09-01T01:10:00Z'));
+    const fn = vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => 'Limite de operações atingido!' });
+    global.fetch = fn as unknown as typeof fetch;
+
+    const res = await listReleases();
+    expect(res.stale).toBe(true);
+    expect(res.items).toEqual([{ id: 'rr', name: 'Fresh' }]);
+  });
+});
+
+describe('listGroups', () => {
+  it('flattens the nested [[...]] response and keeps id/name/count/full', async () => {
+    mockJsonFetch(200, [
+      [
+        { id: 'g1', name: 'Grupo 1', participantsAmount: 42, full: false },
+        { id: 'g2', name: 'Grupo 2', participantsAmount: 256, full: true },
+      ],
+    ]);
+    const res = await listGroups('rel-flatten-unique');
+    expect(res.items).toEqual([
+      { id: 'g1', name: 'Grupo 1', participantsAmount: 42, full: false },
+      { id: 'g2', name: 'Grupo 2', participantsAmount: 256, full: true },
+    ]);
+  });
+
+  it('returns an empty list (not an error) on 404', async () => {
+    mockJsonFetch(404, { message: 'Release not found' });
+    const res = await listGroups('rel-404-unique');
+    expect(res.items).toEqual([]);
+    expect(res.stale).toBe(false);
   });
 });
