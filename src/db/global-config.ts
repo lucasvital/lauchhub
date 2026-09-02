@@ -17,10 +17,25 @@ export function isSecret(key: string): boolean {
   return SECRET_KEYS.has(key);
 }
 
+const MASK_STARS = '*'.repeat(20);
+
 function mask(value: string | null): string | null {
   if (!value) return value;
-  if (value.length <= 8) return '****';
-  return `${value.slice(0, 4)}${'*'.repeat(20)}${value.slice(-4)}`;
+  // Always embed a long run of "*" so the value is unambiguously detectable as
+  // masked (see looksMasked) regardless of what the real secret's first/last
+  // chars are — e.g. a JSON credential starting with "{" / whitespace.
+  if (value.length <= 8) return MASK_STARS;
+  return `${value.slice(0, 4)}${MASK_STARS}${value.slice(-4)}`;
+}
+
+/**
+ * Whether a value is a masked placeholder (contains a long run of "*"). Used to
+ * skip re-saving masked secrets — a real credential never contains 12+
+ * consecutive asterisks. This MUST catch every mask() output, otherwise a
+ * masked value would be persisted and overwrite the real secret.
+ */
+export function looksMasked(value: string | null | undefined): boolean {
+  return typeof value === 'string' && /\*{12,}/.test(value);
 }
 
 /**
@@ -43,6 +58,10 @@ export async function upsertMany(entries: Record<string, string | null>): Promis
   if (keys.length === 0) return;
   for (const k of keys) {
     const value = entries[k];
+    // Never persist a masked placeholder over a secret — this would destroy the
+    // real credential (the masked string is not valid JSON/token). Belt-and-
+    // suspenders on top of the route-level skip.
+    if (isSecret(k) && looksMasked(value)) continue;
     const normalized = value === '' || value === undefined ? null : value;
     await query(
       `INSERT INTO global_config (key, value, updated_at)

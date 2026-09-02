@@ -10,7 +10,11 @@ interface SettingsResponse {
 }
 
 function isMasked(value: string | null | undefined): boolean {
-  return !!value && /^\w{4}\*+\w{4}$/.test(value);
+  // A masked value embeds a long run of "*" (see backend mask()). Detecting the
+  // run — not a start/end word-char pattern — is robust to secrets that start
+  // with "{" or whitespace (e.g. the service-account JSON), which otherwise
+  // slipped through and got saved back over the real value.
+  return !!value && /\*{12,}/.test(value);
 }
 
 export function SettingsPage() {
