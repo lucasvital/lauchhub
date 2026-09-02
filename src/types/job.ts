@@ -160,6 +160,9 @@ export interface JobConfigSlice {
   // Sheets — global service account, per-campaign spreadsheet id + tab name
   sheets_id?: string | null;
   sheets_tab?: string | null;
+  // Per-campaign acquisition label written to the trailing "Aquisição" column
+  // (multiple funnels share one sheet; this says which funnel the row is from).
+  sheets_acquisition?: string | null;
 
   // Chatwoot — per-campaign instance (URL/token/account resolved at enrich)
   // plus per-event config block resolved from campaign.chatwoot_event_config[event]

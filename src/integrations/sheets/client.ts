@@ -79,8 +79,9 @@ async function getClient(): Promise<sheets_v4.Sheets> {
 }
 
 /**
- * Canonical 32-column header — fixed schema dictated by the customer's
- * downstream pivot/formula sheets. Do NOT reorder.
+ * Canonical 33-column header — fixed schema dictated by the customer's
+ * downstream pivot/formula sheets. Do NOT reorder. "Aquisição" (trailing) is
+ * the per-campaign funnel label, filled from job.config.sheets_acquisition.
  *
  * Some columns are computed by spreadsheet formulas (Campaign Name, Adset
  * Name, Ad Name, utm_id=) so the worker writes empty strings for them and
@@ -119,10 +120,11 @@ export const SHEETS_HEADER = [
   'Preço Original',
   'Tipo Pagamento',
   'execution',
+  'Aquisição',
 ] as const;
 
-const HEADER_RANGE_ROW1 = 'A1:AF1';
-const APPEND_RANGE_COLUMNS = 'A:AF'; // A..AF = the 32 canonical columns
+const HEADER_RANGE_ROW1 = 'A1:AG1';
+const APPEND_RANGE_COLUMNS = 'A:AG'; // A..AG = the 33 canonical columns
 
 // Per-(spreadsheet+tab) write serialization. appendRow reads the next free row
 // then writes it; without this lock two concurrent jobs could compute the same
@@ -179,7 +181,7 @@ export interface AppendInput {
 }
 
 /**
- * Compute the first empty row (1-based). Reads the whole A:AF block so trailing
+ * Compute the first empty row (1-based). Reads the whole A:AG block so trailing
  * rows that have data only in far-right columns (legacy n8n leftovers) still
  * count — we append AFTER them instead of overwriting.
  */
@@ -194,7 +196,7 @@ async function findNextRow(
 }
 
 /**
- * Append a row anchored to an explicit `A{n}:AF{n}` range. Writing an explicit
+ * Append a row anchored to an explicit `A{n}:AG{n}` range. Writing an explicit
  * range (instead of `values.append`, which auto-detects a "table" origin and
  * drifted into column AA on messy tabs) guarantees the row always starts at
  * column A. Serialized per sheet+tab so the read-next-row / write pair is atomic.
@@ -206,7 +208,7 @@ export async function appendRow(input: AppendInput): Promise<void> {
   await withSheetLock(`${input.spreadsheetId}::${input.tab}`, async () => {
     try {
       const nextRow = await findNextRow(client, input.spreadsheetId, input.tab);
-      const range = `${escapeTab(input.tab)}!A${nextRow}:AF${nextRow}`;
+      const range = `${escapeTab(input.tab)}!A${nextRow}:AG${nextRow}`;
       await client.spreadsheets.values.update({
         spreadsheetId: input.spreadsheetId,
         range,
@@ -221,7 +223,7 @@ export async function appendRow(input: AppendInput): Promise<void> {
   });
 }
 
-// Column indexes (0-based, into the A:AF row) used by the refund lookup.
+// Column indexes (0-based, into the A:AG row) used by the refund lookup.
 // Must stay in sync with SHEETS_HEADER / buildRow.
 const COL_EVENT = 2; //  C — Evento
 const COL_EMAIL = 4; //  E — E-mail
@@ -255,7 +257,7 @@ export interface FindPurchaseResult {
  */
 export async function findPurchaseRow(input: FindPurchaseInput): Promise<FindPurchaseResult> {
   const client = await getClient();
-  const range = `${escapeTab(input.tab)}!A:AF`;
+  const range = `${escapeTab(input.tab)}!A:AG`;
   let rows: string[][];
   try {
     const r = await client.spreadsheets.values.get({ spreadsheetId: input.spreadsheetId, range });

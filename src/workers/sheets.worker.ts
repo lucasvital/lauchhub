@@ -88,6 +88,7 @@ export function buildRow(job: WebhookJob): (string | number | null)[] {
     /* 30 Preço Original        */ formatCentsBRL(o.product_base_price),
     /* 31 Tipo Pagamento        */ o.payment_method ?? '',
     /* 32 execution             */ job.correlation_id,
+    /* 33 Aquisição             */ job.config.sheets_acquisition ?? '',
   ];
 }
 
