@@ -11,6 +11,7 @@ const items: NavItem[] = [
   { to: '/campaigns', label: 'Campanhas', match: (p) => p.startsWith('/campaigns') },
   { to: '/instances', label: 'Integrações', match: (p) => p.startsWith('/instances') },
   { to: '/logs', label: 'Logs / DLQ', match: (p) => p.startsWith('/logs') },
+  { to: '/status', label: 'Status', match: (p) => p.startsWith('/status') },
   { to: '/settings', label: 'Configurações', match: (p) => p.startsWith('/settings') },
 ];
 
