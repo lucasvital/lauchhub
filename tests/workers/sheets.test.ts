@@ -46,10 +46,19 @@ const sampleJob: WebhookJob = {
 };
 
 describe('sheets buildRow', () => {
-  it('produces all 32 columns in canonical order matching SHEETS_HEADER length', () => {
+  it('produces all 33 columns in canonical order matching SHEETS_HEADER length', () => {
     const row = buildRow(sampleJob);
     expect(row).toHaveLength(SHEETS_HEADER.length);
-    expect(row).toHaveLength(32);
+    expect(row).toHaveLength(33);
+  });
+
+  it('writes the campaign acquisition label into the trailing column', () => {
+    const row = buildRow({ ...sampleJob, config: { ...sampleJob.config, sheets_acquisition: 'A1' } });
+    expect(row[32]).toBe('A1'); // 33rd column — Aquisição
+  });
+
+  it('leaves the acquisition column empty when unset', () => {
+    expect(buildRow(sampleJob)[32]).toBe('');
   });
 
   it('maps each column from the right source', () => {

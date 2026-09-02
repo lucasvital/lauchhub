@@ -130,6 +130,7 @@ export interface Campaign {
   expert_name: string | null;
   sheets_id: string | null;
   sheets_tab: string | null;
+  sheets_acquisition: string | null;
   chatwoot_instance_id: string | null;
   mautic_instance_id: string | null;
   chatwoot_inbox_id: number | null;

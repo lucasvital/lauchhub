@@ -18,6 +18,8 @@ export interface CampaignRow {
   expert_name: string | null;
   sheets_id: string | null;
   sheets_tab: string | null;
+  /** Per-campaign label written to the trailing "Aquisição" sheet column. */
+  sheets_acquisition: string | null;
   // FK references — when null, the worker for that channel is effectively disabled
   chatwoot_instance_id: string | null;
   mautic_instance_id: string | null;
@@ -58,6 +60,7 @@ export interface CampaignCreateInput {
   expert_name?: string | null;
   sheets_id?: string | null;
   sheets_tab?: string | null;
+  sheets_acquisition?: string | null;
   chatwoot_instance_id?: string | null;
   mautic_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
@@ -83,6 +86,7 @@ export interface CampaignUpdateInput {
   expert_name?: string | null;
   sheets_id?: string | null;
   sheets_tab?: string | null;
+  sheets_acquisition?: string | null;
   chatwoot_instance_id?: string | null;
   mautic_instance_id?: string | null;
   chatwoot_inbox_id?: number | null;
@@ -102,7 +106,7 @@ export interface CampaignUpdateInput {
 
 const ALL_COLS = `
   id, name, campaign_token, product_id, product_name, expert_name,
-  sheets_id, sheets_tab,
+  sheets_id, sheets_tab, sheets_acquisition,
   chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
   mautic_instance_id, mautic_event_config,
   meta_templates,
@@ -170,14 +174,14 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         meta_templates,
         enabled_workers, match_by_product, checkout_links, coupon,
         sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
-        sendflow_broadcasts, active)
+        sendflow_broadcasts, sheets_acquisition, active)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
              $14::jsonb,$15,$16::jsonb,$17,
-             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23)
+             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -202,6 +206,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       input.sendflow_account_id ?? null,
       JSON.stringify(input.sendflow_messages ?? {}),
       JSON.stringify(input.sendflow_broadcasts ?? []),
+      input.sheets_acquisition ?? null,
       input.active ?? true,
     ],
   );
@@ -225,6 +230,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.expert_name !== undefined) setField('expert_name', patch.expert_name);
   if (patch.sheets_id !== undefined) setField('sheets_id', patch.sheets_id);
   if (patch.sheets_tab !== undefined) setField('sheets_tab', patch.sheets_tab);
+  if (patch.sheets_acquisition !== undefined) setField('sheets_acquisition', patch.sheets_acquisition);
   if (patch.chatwoot_instance_id !== undefined) setField('chatwoot_instance_id', patch.chatwoot_instance_id);
   if (patch.chatwoot_inbox_id !== undefined) setField('chatwoot_inbox_id', patch.chatwoot_inbox_id);
   if (patch.chatwoot_event_config !== undefined) setField('chatwoot_event_config', patch.chatwoot_event_config, true);

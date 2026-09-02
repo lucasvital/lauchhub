@@ -292,6 +292,24 @@ export function CampaignDetailPage() {
           />
           <label className="block sm:col-span-2">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Aquisição (planilha)
+            </span>
+            <input
+              defaultValue={c.sheets_acquisition ?? ''}
+              onBlur={(e) => {
+                const v = e.target.value.trim() || null;
+                if (v !== (c.sheets_acquisition ?? null))
+                  patchCampaign.mutate({ sheets_acquisition: v });
+              }}
+              placeholder="ex: A1"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+              Vai na última coluna <code>Aquisição</code> da planilha, em toda linha desta campanha —
+              serve pra distinguir os funis que caem na mesma planilha.
+            </span>
+          </label>
+          <label className="block sm:col-span-2">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Checkout(s) da oferta
             </span>
             <input
@@ -529,11 +547,11 @@ export function CampaignDetailPage() {
               <code className="text-accent-3">{c.sheets_tab ?? '— (default "vendas")'}</code>
             </div>
             <div className="mt-2 text-[10px] text-muted-2">
-              32 colunas fixas: ID, Data Criação, Evento, Nome, E-mail, Telefone, Instagram, Cidade,
+              33 colunas fixas: ID, Data Criação, Evento, Nome, E-mail, Telefone, Instagram, Cidade,
               Moeda, Valor oferta, ID produto, Transaction, Preço, Order Bump?, Produto, Líquido,
               sck, s=, m=, c=, co=, t=, utm_id=, Campaign Name*, Adset Name*, Ad Name*,
               Moeda Produto, Moeda Original, Moeda recebimento, Preço Original, Tipo Pagamento,
-              execution. (*) computado por fórmula na própria planilha.
+              execution, Aquisição. (*) computado por fórmula na própria planilha.
             </div>
           </div>
         </Card>
