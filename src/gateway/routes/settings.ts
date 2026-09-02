@@ -21,7 +21,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       const body = req.body ?? {};
       const filtered: Record<string, string | null> = {};
       for (const [k, v] of Object.entries(body)) {
-        if (typeof v === 'string' && /^\w{4}\*+\w{4}$/.test(v)) continue; // masked, skip
+        if (gc.looksMasked(v)) continue; // masked placeholder — never persist
         filtered[k] = v;
       }
       await gc.upsertMany(filtered);
