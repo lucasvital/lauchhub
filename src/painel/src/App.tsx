@@ -18,6 +18,7 @@ import { CampaignDetailPage } from './pages/CampaignDetail';
 import { SettingsPage } from './pages/Settings';
 import { LogsPage } from './pages/Logs';
 import { InstancesPage } from './pages/Instances';
+import { StatusPage } from './pages/Status';
 
 type Theme = 'dark' | 'light';
 
@@ -86,6 +87,7 @@ export function App() {
           <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
           <Route path="/instances" element={<InstancesPage />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/status" element={<StatusPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

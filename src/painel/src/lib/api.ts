@@ -252,6 +252,23 @@ export interface SendflowListResponse<T> {
   error?: string;
 }
 
+export interface StatusCheck {
+  id: string;
+  label: string;
+  group: 'infra' | 'sheets' | 'sendflow' | 'chatwoot' | 'mautic';
+  ok: boolean;
+  configured: boolean;
+  detail?: string;
+  latency_ms?: number;
+}
+
+export interface StatusResponse {
+  ok: true;
+  checked_at: string;
+  problems: number;
+  checks: StatusCheck[];
+}
+
 export interface DashboardSummary {
   ok: true;
   byWorker: Record<WorkerId, { waiting: number; active: number; failed: number; completed: number; delayed: number }>;

@@ -22,7 +22,7 @@ interface PingResult {
   error?: string;
 }
 
-async function pingChatwoot(inst: instances.ChatwootInstanceRow): Promise<PingResult> {
+export async function pingChatwoot(inst: instances.ChatwootInstanceRow): Promise<PingResult> {
   const start = Date.now();
   try {
     const res = await fetch(`${inst.url.replace(/\/$/, '')}/api/v1/accounts/${inst.account_id}`, {
@@ -39,7 +39,7 @@ async function pingChatwoot(inst: instances.ChatwootInstanceRow): Promise<PingRe
   }
 }
 
-async function pingMautic(inst: instances.MauticInstanceRow): Promise<PingResult> {
+export async function pingMautic(inst: instances.MauticInstanceRow): Promise<PingResult> {
   const start = Date.now();
   try {
     const auth = Buffer.from(`${inst.username}:${inst.password}`, 'utf8').toString('base64');
