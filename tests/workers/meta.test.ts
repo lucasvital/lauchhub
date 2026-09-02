@@ -102,6 +102,44 @@ describe('processMetaJob — template send via Chatwoot', () => {
     expect(r).toEqual({ messageId: 12345 });
   });
 
+  it('retries createConversation with source_id=phone when the inbox rejects the omission', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 7, name: 'João Silva' });
+    adapter.createConversation
+      .mockRejectedValueOnce(
+        new FatalError(
+          'HTTP 422: {"message":"Source invalid source id for whatsapp inbox","attributes":["source_id"]}',
+          'http_422',
+        ),
+      )
+      .mockResolvedValueOnce({ id: 99, inbox_id: 14 });
+
+    const r = await processMetaJob(makeJob(), adapter);
+
+    expect(adapter.createConversation).toHaveBeenCalledTimes(2);
+    // first attempt omits source_id, retry adds the phone digits (no "+")
+    expect(adapter.createConversation).toHaveBeenNthCalledWith(1, cfg, {
+      contact_id: 7,
+      inbox_id: 14,
+    });
+    expect(adapter.createConversation).toHaveBeenNthCalledWith(2, cfg, {
+      contact_id: 7,
+      inbox_id: 14,
+      source_id: '5541999999999',
+    });
+    expect(r).toEqual({ messageId: 12345 });
+  });
+
+  it('does not retry createConversation for a non-source_id 422', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 7, name: 'João Silva' });
+    adapter.createConversation.mockRejectedValue(
+      new FatalError('HTTP 422: {"message":"something else"}', 'http_422'),
+    );
+    await expect(processMetaJob(makeJob(), adapter)).rejects.toBeInstanceOf(FatalError);
+    expect(adapter.createConversation).toHaveBeenCalledTimes(1);
+  });
+
   it('creates contact when none exists', async () => {
     const adapter = makeAdapter();
     adapter.searchByPhone.mockResolvedValue(null);
