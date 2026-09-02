@@ -125,6 +125,7 @@ export function CampaignDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [copied, setCopied] = useState(false);
+  const [copiedTmb, setCopiedTmb] = useState(false);
 
   const q = useQuery({
     queryKey: ['campaigns', id],
@@ -178,16 +179,19 @@ export function CampaignDetailPage() {
   const c = q.data.campaign;
   const webhookUrl = `${location.origin.replace('://launchhub', '://launches')}/webhook/${c.campaign_token}`;
   const apiUrl = `${import.meta.env.VITE_API_BASE_URL ?? location.origin}/webhook/${c.campaign_token}`;
+  const tmbUrl = `${import.meta.env.VITE_API_BASE_URL ?? location.origin}/webhook/tmb/${c.campaign_token}`;
 
-  async function copyWebhook() {
+  async function copyText(text: string, mark: (v: boolean) => void) {
     try {
-      await navigator.clipboard.writeText(apiUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      await navigator.clipboard.writeText(text);
+      mark(true);
+      setTimeout(() => mark(false), 1600);
     } catch {
       /* ignore */
     }
   }
+  const copyWebhook = () => copyText(apiUrl, setCopied);
+  const copyTmb = () => copyText(tmbUrl, setCopiedTmb);
 
   function toggleWorker(event: EventId, worker: WorkerId) {
     const currentSet = new Set(c.enabled_workers[event] ?? []);
@@ -229,6 +233,7 @@ export function CampaignDetailPage() {
 
       <Card className="mb-6">
         <h3 className="mb-3">// Webhook URL</h3>
+        <div className="mb-1.5 text-[10px] uppercase tracking-[0.08em] text-muted-2">Kiwify</div>
         <div className="flex items-center gap-2.5 overflow-x-auto rounded border border-dashed border-border-2 bg-dim px-3 py-2.5 font-mono text-[11px]">
           <span className="text-[11px] uppercase tracking-[0.08em] text-muted">POST</span>
           <code className="whitespace-nowrap text-accent-2">{apiUrl || webhookUrl}</code>
@@ -239,6 +244,23 @@ export function CampaignDetailPage() {
             {copied ? '✓ copiado' : 'copiar'}
           </button>
         </div>
+        <div className="mb-1.5 mt-3 text-[10px] uppercase tracking-[0.08em] text-muted-2">
+          TMB — Webhook de Vendas
+        </div>
+        <div className="flex items-center gap-2.5 overflow-x-auto rounded border border-dashed border-border-2 bg-dim px-3 py-2.5 font-mono text-[11px]">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-muted">POST</span>
+          <code className="whitespace-nowrap text-accent-2">{tmbUrl}</code>
+          <button
+            onClick={copyTmb}
+            className="ml-auto rounded-sm border border-border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted transition-colors hover:border-accent hover:text-accent"
+          >
+            {copiedTmb ? '✓ copiado' : 'copiar'}
+          </button>
+        </div>
+        <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
+          Cole a URL da TMB no cadastro do produto → Integrações → Webhook Vendas. Só o evento{' '}
+          <strong>Efetivado</strong> é processado (vira Compra Aprovada); Cancelado é ignorado.
+        </p>
       </Card>
 
       <Card className="mb-6">
