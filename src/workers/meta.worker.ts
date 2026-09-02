@@ -167,14 +167,30 @@ export async function processMetaJob(
     }
   }
 
-  // Do NOT pass source_id: for a WhatsApp inbox Chatwoot resolves the
-  // contact_inbox from contact_id + inbox_id (created when the contact was made
-  // with phone_number + inbox_id). Passing the raw phone makes Chatwoot mint a
-  // new contact_inbox and reject it with "invalid source id for whatsapp inbox".
-  const conversation = await adapter.createConversation(cfg, {
-    contact_id: contact.id,
-    inbox_id: inboxId,
-  });
+  // Create the conversation. Prefer omitting source_id: many WhatsApp inboxes
+  // resolve the contact_inbox from contact_id + inbox_id (auto-created when the
+  // contact was made with phone_number + inbox_id). But some official WhatsApp
+  // Cloud inboxes REQUIRE an explicit source_id and reject the omission with
+  // 422 "invalid source id for whatsapp inbox". Chatwoot's source_id for a
+  // WhatsApp inbox is the phone in DIGITS (no "+"), so retry with `phone`.
+  let conversation;
+  try {
+    conversation = await adapter.createConversation(cfg, {
+      contact_id: contact.id,
+      inbox_id: inboxId,
+    });
+  } catch (err) {
+    if (err instanceof FatalError && err.code === 'http_422' && /source[_ ]?id/i.test(err.message)) {
+      jobLog.info({ contact_id: contact.id }, 'meta_conversation_retry_with_source_id');
+      conversation = await adapter.createConversation(cfg, {
+        contact_id: contact.id,
+        inbox_id: inboxId,
+        source_id: phone, // digits, no "+"
+      });
+    } else {
+      throw err;
+    }
+  }
 
   const msg = await adapter.sendTemplateMessage(cfg, conversation.id, {
     template_name: meta.template_name,
