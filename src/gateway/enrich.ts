@@ -94,13 +94,27 @@ export async function buildJobs(
   campaign: CampaignRow,
   event: EventId,
 ): Promise<{ worker: WorkerId; job: WebhookJob }[]> {
+  return assembleJobs(campaign, event, {
+    contact: extractContact(payload),
+    order: extractOrder(payload),
+    utm: extractUtm(payload),
+  });
+}
+
+/**
+ * Assemble one enqueue-ready job per enabled worker from an already-extracted
+ * contact/order/utm trio. Shared by the Kiwify path (buildJobs) and other
+ * sources (e.g. TMB) that map their own payload into the canonical shape.
+ */
+export async function assembleJobs(
+  campaign: CampaignRow,
+  event: EventId,
+  extracted: Pick<WebhookJob, 'contact' | 'order' | 'utm'>,
+): Promise<{ worker: WorkerId; job: WebhookJob }[]> {
   const enabled = (campaign.enabled_workers[event] ?? []) as WorkerId[];
   if (enabled.length === 0) return [];
 
   const correlation_id = randomUUID();
-  const contact = extractContact(payload);
-  const order = extractOrder(payload);
-  const utm = extractUtm(payload);
   const received_at = new Date().toISOString();
 
   const results: { worker: WorkerId; job: WebhookJob }[] = [];
@@ -113,9 +127,9 @@ export async function buildJobs(
         campaign_token: campaign.campaign_token,
         event,
         worker,
-        contact,
-        order,
-        utm,
+        contact: extracted.contact,
+        order: extracted.order,
+        utm: extracted.utm,
         config: await sliceConfig(campaign, event, worker),
         received_at,
       },
