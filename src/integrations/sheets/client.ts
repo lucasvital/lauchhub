@@ -195,11 +195,37 @@ async function findNextRow(
   return (r.data.values?.length ?? 0) + 1;
 }
 
+// Columns X, Y, Z (0-based 23, 24, 25 — "Campaign Name", "Adset Name",
+// "Ad Name") are computed by the customer's own sheet formulas (typically an
+// ARRAYFORMULA). We must NOT write them: overwriting a formula-owned cell with
+// an empty value breaks the ARRAYFORMULA spill (#REF! "would overwrite data"),
+// which wipes the computed column and leaves cells that look merged/blank. So
+// the row is written in two segments around that gap: A:W and AA:AG.
+const FORMULA_GAP_START = 23; // index of "Campaign Name" (column X)
+const FORMULA_GAP_END = 26; // index of "Moeda Produto" (column AA) — first after the gap
+
 /**
- * Append a row anchored to an explicit `A{n}:AG{n}` range. Writing an explicit
- * range (instead of `values.append`, which auto-detects a "table" origin and
- * drifted into column AA on messy tabs) guarantees the row always starts at
- * column A. Serialized per sheet+tab so the read-next-row / write pair is atomic.
+ * Split a full 33-column row into the two write segments that skip the
+ * formula-owned columns X:Z — `before` = A:W (cols 0-22), `after` = AA:AG
+ * (cols 26-32). Nulls become empty strings.
+ */
+export function splitRowForWrite(row: (string | number | null)[]): {
+  before: (string | number)[];
+  after: (string | number)[];
+} {
+  const clean = (v: string | number | null): string | number => (v == null ? '' : v);
+  return {
+    before: row.slice(0, FORMULA_GAP_START).map(clean),
+    after: row.slice(FORMULA_GAP_END).map(clean),
+  };
+}
+
+/**
+ * Append a row to explicit ranges — `A{n}:W{n}` + `AA{n}:AG{n}`, skipping the
+ * formula-owned columns X:Z. Explicit ranges (not `values.append`, which
+ * auto-detects a "table" origin and drifted into column AA on messy tabs)
+ * guarantee the row starts at column A. Serialized per sheet+tab so the
+ * read-next-row / write pair is atomic.
  */
 export async function appendRow(input: AppendInput): Promise<void> {
   const client = await getClient();
@@ -208,12 +234,17 @@ export async function appendRow(input: AppendInput): Promise<void> {
   await withSheetLock(`${input.spreadsheetId}::${input.tab}`, async () => {
     try {
       const nextRow = await findNextRow(client, input.spreadsheetId, input.tab);
-      const range = `${escapeTab(input.tab)}!A${nextRow}:AG${nextRow}`;
-      await client.spreadsheets.values.update({
+      const tab = escapeTab(input.tab);
+      const { before, after } = splitRowForWrite(input.row);
+      await client.spreadsheets.values.batchUpdate({
         spreadsheetId: input.spreadsheetId,
-        range,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [input.row.map((v) => (v == null ? '' : v))] },
+        requestBody: {
+          valueInputOption: 'USER_ENTERED',
+          data: [
+            { range: `${tab}!A${nextRow}:W${nextRow}`, values: [before] },
+            { range: `${tab}!AA${nextRow}:AG${nextRow}`, values: [after] },
+          ],
+        },
       });
     } catch (err) {
       const status = (err as { code?: number }).code;

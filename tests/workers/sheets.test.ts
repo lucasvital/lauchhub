@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { WebhookJob } from '../../src/types/job.js';
 import { buildRow, processSheetsJob } from '../../src/workers/sheets.worker.js';
 import { FatalError } from '../../src/integrations/_shared/errors.js';
-import { SHEETS_HEADER } from '../../src/integrations/sheets/client.js';
+import { SHEETS_HEADER, splitRowForWrite } from '../../src/integrations/sheets/client.js';
 
 const sampleJob: WebhookJob = {
   correlation_id: 'corr-1',
@@ -59,6 +59,34 @@ describe('sheets buildRow', () => {
 
   it('leaves the acquisition column empty when unset', () => {
     expect(buildRow(sampleJob)[32]).toBe('');
+  });
+
+  it('splitRowForWrite skips the formula columns X:Z (Campaign/Adset/Ad Name)', () => {
+    // Distinct markers per column index so we can prove which ones are written.
+    const row = Array.from({ length: 33 }, (_, i) => `c${i}`);
+    const { before, after } = splitRowForWrite(row);
+
+    // before = A:W → indices 0..22 (utm_id= is the last one written)
+    expect(before).toHaveLength(23);
+    expect(before[0]).toBe('c0');
+    expect(before[22]).toBe('c22');
+    // after = AA:AG → indices 26..32 (Moeda Produto … Aquisição)
+    expect(after).toHaveLength(7);
+    expect(after[0]).toBe('c26');
+    expect(after[6]).toBe('c32');
+
+    // The formula-owned columns X/Y/Z (23,24,25) are in NEITHER segment.
+    expect(before).not.toContain('c23');
+    expect(after).not.toContain('c23');
+    expect([...before, ...after]).not.toContain('c24');
+    expect([...before, ...after]).not.toContain('c25');
+  });
+
+  it('splitRowForWrite maps the real row so Campaign/Adset/Ad Name are never sent', () => {
+    const { before, after } = splitRowForWrite(buildRow(sampleJob));
+    // 23 + 7 = 30 cells written; 3 formula columns skipped.
+    expect(before.length + after.length).toBe(30);
+    expect(after[6]).toBe(''); // Aquisição (unset) still written as empty
   });
 
   it('maps each column from the right source', () => {
