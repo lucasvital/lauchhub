@@ -140,6 +140,7 @@ export interface Campaign {
   enabled_workers: Record<string, WorkerId[]>;
   match_by_product: boolean;
   checkout_links: string[];
+  utm_term_match: string | null;
   coupon: string | null;
   sendflow_release_id: string | null;
   sendflow_group_ids: string[];
