@@ -369,6 +369,7 @@ export function CampaignDetailPage() {
             releaseId={c.sendflow_release_id}
             groupIds={c.sendflow_group_ids ?? []}
             accountId={c.sendflow_account_id}
+            removeDelayMinutes={c.sendflow_remove_delay_minutes ?? 0}
             onChangeRelease={(v) =>
               patchCampaign.mutate({
                 sendflow_release_id: v,
@@ -378,6 +379,7 @@ export function CampaignDetailPage() {
             }
             onChangeGroups={(list) => patchCampaign.mutate({ sendflow_group_ids: list })}
             onChangeAccount={(v) => patchCampaign.mutate({ sendflow_account_id: v })}
+            onChangeRemoveDelay={(v) => patchCampaign.mutate({ sendflow_remove_delay_minutes: v })}
           />
         </div>
 
@@ -1860,16 +1862,20 @@ function SendflowPicker({
   releaseId,
   groupIds,
   accountId,
+  removeDelayMinutes,
   onChangeRelease,
   onChangeGroups,
   onChangeAccount,
+  onChangeRemoveDelay,
 }: {
   releaseId: string | null;
   groupIds: string[];
   accountId: string | null;
+  removeDelayMinutes: number;
   onChangeRelease: (v: string | null) => void;
   onChangeGroups: (list: string[]) => void;
   onChangeAccount: (v: string | null) => void;
+  onChangeRemoveDelay: (v: number) => void;
 }) {
   const releasesQ = useSendflowReleases();
   const groupsQ = useSendflowGroups(releaseId);
@@ -2084,11 +2090,34 @@ function SendflowPicker({
             grupo não precisa dela.
           </span>
         </label>
+
+        <label className="mt-3 block max-w-md">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+            Delay pra remover do grupo (minutos)
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            defaultValue={removeDelayMinutes}
+            key={`delay-${removeDelayMinutes}`}
+            onBlur={(e) => {
+              const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
+              if (v !== removeDelayMinutes) onChangeRemoveDelay(v);
+            }}
+            placeholder="0"
+          />
+          <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+            Posta a mensagem de boas-vindas na hora e agenda a remoção pra{' '}
+            <strong>{removeDelayMinutes || 0} min</strong> depois (via fila). <code>0</code> = remove
+            na hora.
+          </span>
+        </label>
       </div>
 
       <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
         Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — no evento, a mensagem é
-        postada no(s) grupo(s) marcando o comprador e, em seguida, ele é removido. Prefira selecionar
+        postada no(s) grupo(s) e, depois do delay acima, o comprador é removido. Prefira selecionar
         os grupos na lista (o id certo é o GID <code>120363…</code>, não o doc id).
         {releasesQ.data?.stale && ' · lista em cache (rate limit da API)'}
       </p>

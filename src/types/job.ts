@@ -198,6 +198,10 @@ export interface JobConfigSlice {
   // messages are resolved for the current event by enrich().
   sendflow_account_id?: string | null;
   sendflow_messages?: SendflowTextMessage[];
+  // Minutes to wait AFTER posting the welcome message(s) before removing the
+  // buyer from the group. 0 = remove immediately. Enforced via a delayed queue
+  // job so the buyer has time to see the message.
+  sendflow_remove_delay_minutes?: number;
 }
 
 export interface WebhookJob {
@@ -211,6 +215,11 @@ export interface WebhookJob {
   utm: UtmInfo;
   config: JobConfigSlice;
   received_at: string;
+  /**
+   * SendFlow-only sub-action. Absent/"process" = post welcome message(s) then
+   * schedule removal; "remove" = a delayed job that only removes the buyer.
+   */
+  sendflow_action?: 'process' | 'remove';
 }
 
 export const WORKER_IDS: readonly WorkerId[] = [
