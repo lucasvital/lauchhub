@@ -16,12 +16,22 @@ const log = logger.child({ worker: 'sendflow' });
 
 export type SendflowRemoveFn = (input: RemoveParticipantsInput) => Promise<void>;
 export type SendflowGroupSendFn = (input: SendGroupTextInput) => Promise<void>;
+/** Enqueue a delayed "remove" job for the same buyer, `delayMs` from now. */
+export type SendflowScheduleRemovalFn = (job: WebhookJob, delayMs: number) => Promise<void>;
 
 export interface SendflowDeps {
   remove?: SendflowRemoveFn;
   sendGroup?: SendflowGroupSendFn;
+  scheduleRemoval?: SendflowScheduleRemovalFn;
   /** Delay between actions and between inline retries (SendFlow rate limits). */
   sleepMs?: number;
+}
+
+/** Default: enqueue a delayed removal job onto the sendflow queue. */
+async function defaultScheduleRemoval(job: WebhookJob, delayMs: number): Promise<void> {
+  const { queues } = await import('../queue/index.js');
+  const removalJob: WebhookJob = { ...job, sendflow_action: 'remove' };
+  await queues.sendflow.add(`remove:${job.correlation_id}`, removalJob, { delay: delayMs });
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -56,6 +66,7 @@ export interface SendflowResult {
   posted: number;
   removed: number;
   failed: number;
+  scheduled?: number;
   skipped?: boolean;
 }
 
@@ -77,12 +88,14 @@ export async function processSendflowJob(
 ): Promise<SendflowResult> {
   const remove = deps.remove ?? defaultRemove;
   const sendGroup = deps.sendGroup ?? defaultSendGroup;
+  const scheduleRemoval = deps.scheduleRemoval ?? defaultScheduleRemoval;
   const sleepMs = deps.sleepMs ?? 300;
 
   const jobLog = log.child({
     correlation_id: job.correlation_id,
     campaign_id: job.campaign_id,
     event: job.event,
+    action: job.sendflow_action ?? 'process',
   });
 
   const releaseId = job.config.sendflow_release_id;
@@ -105,9 +118,20 @@ export async function processSendflowJob(
     return { posted: 0, removed: 0, failed: 0, skipped: true };
   }
 
+  // ─── Delayed removal job (enqueued after the welcome message) ──────────────
+  // A dedicated job (no message posting), so failures can retry/DLQ safely
+  // without any risk of re-posting the welcome message.
+  if (job.sendflow_action === 'remove') {
+    if (!wantsRemove) return { posted: 0, removed: 0, failed: 0, skipped: true };
+    await remove({ releaseId: releaseId!, groupIds, participants: [phone] });
+    jobLog.info({ release_id: releaseId, group_ids: groupIds }, 'sendflow_removed_delayed');
+    return { posted: 0, removed: 1, failed: 0 };
+  }
+
   let posted = 0;
   let removed = 0;
   let failed = 0;
+  let scheduled = 0;
 
   // 1) Post the message(s) to the group(s), mentioning the buyer.
   if (wantsPost) {
@@ -153,24 +177,41 @@ export async function processSendflowJob(
   }
 
   // 2) Remove the buyer from the group(s) — after the message, so they see it.
+  //    With a configured delay, the removal is a separate delayed queue job so
+  //    the buyer stays in the group for that long; otherwise remove inline.
   if (wantsRemove) {
-    const ok = await bestEffort(
-      () => remove({ releaseId: releaseId!, groupIds, participants: [phone] }),
-      {
-        tries: 3,
-        sleepMs,
-        onError: (err, attempt) => jobLog.warn({ err, attempt }, 'sendflow_remove_failed'),
-      },
-    );
-    if (ok) {
-      removed = 1;
-      jobLog.info({ release_id: releaseId, group_ids: groupIds }, 'sendflow_removed');
+    const delayMs = Math.max(0, Math.round((job.config.sendflow_remove_delay_minutes ?? 0) * 60_000));
+    if (delayMs > 0) {
+      try {
+        await scheduleRemoval(job, delayMs);
+        scheduled = 1;
+        jobLog.info(
+          { delay_minutes: job.config.sendflow_remove_delay_minutes },
+          'sendflow_removal_scheduled',
+        );
+      } catch (err) {
+        failed += 1;
+        jobLog.warn({ err }, 'sendflow_removal_schedule_failed');
+      }
     } else {
-      failed += 1;
+      const ok = await bestEffort(
+        () => remove({ releaseId: releaseId!, groupIds, participants: [phone] }),
+        {
+          tries: 3,
+          sleepMs,
+          onError: (err, attempt) => jobLog.warn({ err, attempt }, 'sendflow_remove_failed'),
+        },
+      );
+      if (ok) {
+        removed = 1;
+        jobLog.info({ release_id: releaseId, group_ids: groupIds }, 'sendflow_removed');
+      } else {
+        failed += 1;
+      }
     }
   }
 
-  return { posted, removed, failed };
+  return { posted, removed, failed, scheduled };
 }
 
 export async function startSendflowWorker(deps: SendflowDeps = {}): Promise<Worker<WebhookJob>> {

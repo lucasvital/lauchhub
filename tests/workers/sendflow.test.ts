@@ -10,10 +10,13 @@ function makeJob(
     phone?: string | null;
     accountId?: string | null;
     messages?: SendflowTextMessage[];
+    removeDelayMinutes?: number;
+    action?: 'process' | 'remove';
   } = {},
 ): WebhookJob {
   return {
     correlation_id: 'c1',
+    sendflow_action: overrides.action,
     campaign_id: 'cmp',
     campaign_token: 'cx',
     event: 'compra_aprovada',
@@ -56,6 +59,7 @@ function makeJob(
       sendflow_group_ids: overrides.groupIds ?? ['120363000000000001'],
       sendflow_account_id: overrides.accountId === undefined ? null : overrides.accountId,
       sendflow_messages: overrides.messages ?? [],
+      sendflow_remove_delay_minutes: overrides.removeDelayMinutes,
     },
     received_at: '2026-05-15T18:00:00Z',
   };
@@ -158,6 +162,53 @@ describe('processSendflowJob — group messages', () => {
     expect(sendGroup).toHaveBeenCalledTimes(1); // fatal → no retry
     expect(remove).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ posted: 0, removed: 1, failed: 1 });
+  });
+
+  it('schedules the removal (delayed queue job) instead of removing inline when a delay is set', async () => {
+    const remove = vi.fn();
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    const scheduleRemoval = vi.fn().mockResolvedValue(undefined);
+    const result = await processSendflowJob(
+      makeJob({ accountId: 'acc-9', messages: [{ text: 'oi' }], removeDelayMinutes: 10 }),
+      { remove, sendGroup, scheduleRemoval, sleepMs: 0 },
+    );
+
+    expect(sendGroup).toHaveBeenCalledTimes(1); // welcome posted now
+    expect(remove).not.toHaveBeenCalled(); // NOT removed inline
+    expect(scheduleRemoval).toHaveBeenCalledTimes(1);
+    expect(scheduleRemoval.mock.calls[0][1]).toBe(10 * 60_000); // 10 min in ms
+    expect(result).toMatchObject({ posted: 1, removed: 0, scheduled: 1 });
+  });
+
+  it('processes a delayed "remove" job: removes only, never posts', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const sendGroup = vi.fn();
+    const scheduleRemoval = vi.fn();
+    const result = await processSendflowJob(
+      makeJob({ action: 'remove', accountId: 'acc-9', messages: [{ text: 'oi' }] }),
+      { remove, sendGroup, scheduleRemoval, sleepMs: 0 },
+    );
+
+    expect(remove).toHaveBeenCalledWith({
+      releaseId: 'rel-123',
+      groupIds: ['120363000000000001'],
+      participants: ['5535991891712'],
+    });
+    expect(sendGroup).not.toHaveBeenCalled();
+    expect(scheduleRemoval).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ removed: 1 });
+  });
+
+  it('removes inline when delay is 0 (no queue hop)', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const scheduleRemoval = vi.fn();
+    const result = await processSendflowJob(
+      makeJob({ accountId: 'acc-9', messages: [{ text: 'oi' }], removeDelayMinutes: 0 }),
+      { remove, sendGroup: vi.fn().mockResolvedValue(undefined), scheduleRemoval, sleepMs: 0 },
+    );
+    expect(scheduleRemoval).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ removed: 1 });
   });
 
   it('retries a transient post error inline, then succeeds (no full-job retry)', async () => {

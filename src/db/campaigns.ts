@@ -45,6 +45,8 @@ export interface CampaignRow {
   sendflow_account_id: string | null;
   /** Per-event direct WhatsApp text messages sent via SendFlow. */
   sendflow_messages: Partial<Record<EventId, SendflowEventConfig>>;
+  /** Minutes to wait after the welcome message before removing the buyer. */
+  sendflow_remove_delay_minutes: number;
   /** Recurring scheduled group broadcasts (message + optional video). */
   sendflow_broadcasts: SendflowBroadcast[];
   active: boolean;
@@ -75,6 +77,7 @@ export interface CampaignCreateInput {
   sendflow_group_ids?: string[];
   sendflow_account_id?: string | null;
   sendflow_messages?: Partial<Record<EventId, SendflowEventConfig>>;
+  sendflow_remove_delay_minutes?: number;
   sendflow_broadcasts?: SendflowBroadcast[];
   active?: boolean;
 }
@@ -101,6 +104,7 @@ export interface CampaignUpdateInput {
   sendflow_group_ids?: string[];
   sendflow_account_id?: string | null;
   sendflow_messages?: Partial<Record<EventId, SendflowEventConfig>>;
+  sendflow_remove_delay_minutes?: number;
   sendflow_broadcasts?: SendflowBroadcast[];
 }
 
@@ -112,7 +116,7 @@ const ALL_COLS = `
   meta_templates,
   enabled_workers, match_by_product, checkout_links, coupon,
   sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
-  sendflow_broadcasts,
+  sendflow_remove_delay_minutes, sendflow_broadcasts,
   active, created_at, updated_at
 `;
 
@@ -174,14 +178,14 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         meta_templates,
         enabled_workers, match_by_product, checkout_links, coupon,
         sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
-        sendflow_broadcasts, sheets_acquisition, active)
+        sendflow_broadcasts, sheets_acquisition, sendflow_remove_delay_minutes, active)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
              $14::jsonb,$15,$16::jsonb,$17,
-             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24)
+             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -207,6 +211,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       JSON.stringify(input.sendflow_messages ?? {}),
       JSON.stringify(input.sendflow_broadcasts ?? []),
       input.sheets_acquisition ?? null,
+      input.sendflow_remove_delay_minutes ?? 0,
       input.active ?? true,
     ],
   );
@@ -245,6 +250,8 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.sendflow_group_ids !== undefined) setField('sendflow_group_ids', patch.sendflow_group_ids, true);
   if (patch.sendflow_account_id !== undefined) setField('sendflow_account_id', patch.sendflow_account_id);
   if (patch.sendflow_messages !== undefined) setField('sendflow_messages', patch.sendflow_messages, true);
+  if (patch.sendflow_remove_delay_minutes !== undefined)
+    setField('sendflow_remove_delay_minutes', patch.sendflow_remove_delay_minutes);
   if (patch.sendflow_broadcasts !== undefined) setField('sendflow_broadcasts', patch.sendflow_broadcasts, true);
 
   if (fields.length === 0) {

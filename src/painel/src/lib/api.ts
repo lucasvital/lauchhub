@@ -145,6 +145,7 @@ export interface Campaign {
   sendflow_group_ids: string[];
   sendflow_account_id: string | null;
   sendflow_messages: Partial<Record<EventId, SendflowEventConfig>>;
+  sendflow_remove_delay_minutes: number;
   sendflow_broadcasts: SendflowBroadcast[];
   active: boolean;
   created_at: string;

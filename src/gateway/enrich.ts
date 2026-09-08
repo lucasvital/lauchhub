@@ -80,6 +80,7 @@ async function sliceConfig(
         sendflow_group_ids: campaign.sendflow_group_ids,
         sendflow_account_id: campaign.sendflow_account_id,
         sendflow_messages: campaign.sendflow_messages[event]?.messages ?? [],
+        sendflow_remove_delay_minutes: campaign.sendflow_remove_delay_minutes,
         coupon: campaign.coupon,
       };
   }
