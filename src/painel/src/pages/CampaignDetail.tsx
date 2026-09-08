@@ -347,6 +347,24 @@ export function CampaignDetailPage() {
               placeholder="ex: eoGZFJ4, OMGTOhC  (código do checkout_link, separado por vírgula)"
             />
           </label>
+          <label className="block sm:col-span-2">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Filtrar por utm_term (funil)
+            </span>
+            <input
+              defaultValue={c.utm_term_match ?? ''}
+              onBlur={(e) => {
+                const v = e.target.value.trim() || null;
+                if (v !== (c.utm_term_match ?? null)) patchCampaign.mutate({ utm_term_match: v });
+              }}
+              placeholder="ex: bbe-a2"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+              Quando preenchido, a campanha só processa a venda se o <code>utm_term</code> contém esse
+              texto. Serve pra separar funis que <strong>compartilham checkout</strong> (order bump):
+              o funil errado rejeita a venda. Deixe vazio pra não filtrar.
+            </span>
+          </label>
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Cupom de desconto

@@ -36,6 +36,12 @@ export interface CampaignRow {
   match_by_product: boolean;
   /** Kiwify checkout codes that belong to this campaign (offer matching). */
   checkout_links: string[];
+  /**
+   * Funnel discriminator: when set, only process a webhook whose utm_term
+   * contains this substring (e.g. "bbe-a2"). Disambiguates funnels that share
+   * checkout links (order bumps), where checkout_link can't tell them apart.
+   */
+  utm_term_match: string | null;
   /** Discount coupon appended to the checkout URL ({{checkout_url}}). */
   coupon: string | null;
   /** SendFlow release (campaign) id + group ids to remove buyers from. */
@@ -72,6 +78,7 @@ export interface CampaignCreateInput {
   enabled_workers?: Record<string, WorkerId[]>;
   match_by_product?: boolean;
   checkout_links?: string[];
+  utm_term_match?: string | null;
   coupon?: string | null;
   sendflow_release_id?: string | null;
   sendflow_group_ids?: string[];
@@ -99,6 +106,7 @@ export interface CampaignUpdateInput {
   enabled_workers?: Record<string, WorkerId[]>;
   match_by_product?: boolean;
   checkout_links?: string[];
+  utm_term_match?: string | null;
   coupon?: string | null;
   sendflow_release_id?: string | null;
   sendflow_group_ids?: string[];
@@ -114,7 +122,7 @@ const ALL_COLS = `
   chatwoot_instance_id, chatwoot_inbox_id, chatwoot_event_config,
   mautic_instance_id, mautic_event_config,
   meta_templates,
-  enabled_workers, match_by_product, checkout_links, coupon,
+  enabled_workers, match_by_product, checkout_links, utm_term_match, coupon,
   sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
   sendflow_remove_delay_minutes, sendflow_broadcasts,
   active, created_at, updated_at
@@ -178,14 +186,15 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         meta_templates,
         enabled_workers, match_by_product, checkout_links, coupon,
         sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
-        sendflow_broadcasts, sheets_acquisition, sendflow_remove_delay_minutes, active)
+        sendflow_broadcasts, sheets_acquisition, sendflow_remove_delay_minutes,
+        utm_term_match, active)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
              $14::jsonb,$15,$16::jsonb,$17,
-             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25)
+             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25,$26)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -212,6 +221,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       JSON.stringify(input.sendflow_broadcasts ?? []),
       input.sheets_acquisition ?? null,
       input.sendflow_remove_delay_minutes ?? 0,
+      input.utm_term_match ?? null,
       input.active ?? true,
     ],
   );
@@ -245,6 +255,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.enabled_workers !== undefined) setField('enabled_workers', patch.enabled_workers, true);
   if (patch.match_by_product !== undefined) setField('match_by_product', patch.match_by_product);
   if (patch.checkout_links !== undefined) setField('checkout_links', patch.checkout_links, true);
+  if (patch.utm_term_match !== undefined) setField('utm_term_match', patch.utm_term_match);
   if (patch.coupon !== undefined) setField('coupon', patch.coupon);
   if (patch.sendflow_release_id !== undefined) setField('sendflow_release_id', patch.sendflow_release_id);
   if (patch.sendflow_group_ids !== undefined) setField('sendflow_group_ids', patch.sendflow_group_ids, true);

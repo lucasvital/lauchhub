@@ -3,7 +3,7 @@ import * as campaignsDb from '../../db/campaigns.js';
 import * as unmatchedDb from '../../db/unmatched.js';
 import * as webhookEventsDb from '../../db/webhook-events.js';
 import { queues } from '../../queue/index.js';
-import { detectEvent, type KiwifyPayload } from '../event-detection.js';
+import { detectEvent, extractUtm, type KiwifyPayload } from '../event-detection.js';
 import { buildJobs } from '../enrich.js';
 
 /**
@@ -117,6 +117,31 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
               campaign_token: campaign.campaign_token,
             });
             return reply.code(200).send({ ok: true, processed: false, reason: 'other_offer' });
+          }
+        }
+
+        // Funnel matching by utm_term: when set, only this funnel's own sales
+        // pass. Disambiguates funnels that SHARE checkout links (an order bump
+        // sold in two funnels) — checkout_link can't tell them apart, but the
+        // ad's utm_term carries the funnel id (e.g. "bbe-a2"). A sale whose
+        // utm_term lacks this campaign's marker belongs to another funnel.
+        if (campaign.utm_term_match && campaign.utm_term_match.trim()) {
+          const want = campaign.utm_term_match.trim().toLowerCase();
+          const term = (extractUtm(payload).utm_term ?? '').toLowerCase();
+          if (!term.includes(want)) {
+            log.info({
+              event: 'skipped_other_funnel',
+              campaign_id: campaign.id,
+              want,
+              got: term || null,
+            });
+            record({
+              outcome: 'skipped_other_offer',
+              event: eventId,
+              campaign_id: campaign.id,
+              campaign_token: campaign.campaign_token,
+            });
+            return reply.code(200).send({ ok: true, processed: false, reason: 'other_funnel' });
           }
         }
 

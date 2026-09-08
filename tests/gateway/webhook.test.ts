@@ -194,6 +194,40 @@ describe('POST /webhook/:token', () => {
     expect(res.json().jobs_enqueued).toBe(4);
   });
 
+  it('processes when utm_term_match is set and the utm_term contains it', async () => {
+    findByTokenMock.mockResolvedValue({ ...baseCampaign, utm_term_match: 'bbe-a2' });
+    const app = await buildServer();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/cx-01',
+      payload: {
+        ...paidPayload,
+        TrackingParameters: { utm_term: 'Instagram_Stories_bbe-a2-ago-26--venda--cold' },
+      },
+    });
+    await app.close();
+    expect(res.json().processed).toBe(true);
+    expect(res.json().jobs_enqueued).toBe(4);
+  });
+
+  it('skips (other_funnel) when utm_term lacks the campaign marker', async () => {
+    findByTokenMock.mockResolvedValue({ ...baseCampaign, utm_term_match: 'bbe-a1' });
+    const app = await buildServer();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/cx-01',
+      payload: {
+        ...paidPayload,
+        TrackingParameters: { utm_term: 'Instagram_Stories_bbe-a2-ago-26--venda--cold' },
+      },
+    });
+    await app.close();
+    expect(res.json().processed).toBe(false);
+    expect(res.json().reason).toBe('other_funnel');
+    expect(sheetsAdd).not.toHaveBeenCalled();
+    expect(metaAdd).not.toHaveBeenCalled();
+  });
+
   it('saves to unmatched_events when token is unknown', async () => {
     findByTokenMock.mockResolvedValue(null);
     const app = await buildServer();
