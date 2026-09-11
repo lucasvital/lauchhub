@@ -13,6 +13,33 @@
  */
 const KIWIFY_CHECKOUT_BASE = 'https://pay.kiwify.com.br/';
 
+/** Canonical UTM keys, in the order they're appended to a link. */
+export const UTM_KEYS = [
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+] as const;
+
+export type UtmParams = Partial<Record<(typeof UTM_KEYS)[number], string>>;
+
+/**
+ * Assemble a raw UTM query fragment (e.g. "utm_source=whatsapp&utm_campaign=x")
+ * from a structured params object. Blank values are skipped and each value is
+ * URL-encoded. Returns "" when nothing is set — so callers can fall back to a
+ * campaign-level default.
+ */
+export function assembleUtm(params: UtmParams | null | undefined): string {
+  if (!params) return '';
+  const parts: string[] = [];
+  for (const k of UTM_KEYS) {
+    const v = (params[k] ?? '').trim();
+    if (v) parts.push(`${k}=${encodeURIComponent(v)}`);
+  }
+  return parts.join('&');
+}
+
 export function buildCheckoutLinks(
   checkoutCode: string | null | undefined,
   coupon: string | null | undefined,

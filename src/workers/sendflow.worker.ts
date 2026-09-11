@@ -9,7 +9,7 @@ import {
 import { TransientError } from '../integrations/_shared/errors.js';
 import { logger } from '../shared/logger.js';
 import { render } from '../shared/template.js';
-import { buildCheckoutLinks } from '../shared/checkout.js';
+import { assembleUtm, buildCheckoutLinks } from '../shared/checkout.js';
 import type { WebhookJob } from '../types/job.js';
 
 const log = logger.child({ worker: 'sendflow' });
@@ -136,22 +136,30 @@ export async function processSendflowJob(
   // 1) Post the message(s) to the group(s), mentioning the buyer.
   if (wantsPost) {
     const coupon = job.config.coupon ?? null;
-    const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon, job.config.checkout_utm);
-    const ctx = {
-      contact: job.contact,
-      order: job.order,
-      utm: job.utm,
-      coupon: coupon ?? '',
-      checkout_url,
-      checkout_suffix,
-      // Buyer number for @mentions — digits only, no "+".
-      mention: phone,
-      phone,
-    };
 
     for (let i = 0; i < messages.length; i += 1) {
       const msg = messages[i];
       if (!msg) continue;
+      // Per-message UTM overrides the campaign default when it has any key set;
+      // otherwise fall back to the campaign-level checkout_utm fragment.
+      const msgUtm = assembleUtm(msg.utm);
+      const utmFragment = msgUtm || job.config.checkout_utm;
+      const { checkout_url, checkout_suffix } = buildCheckoutLinks(
+        job.order.checkout_link,
+        coupon,
+        utmFragment,
+      );
+      const ctx = {
+        contact: job.contact,
+        order: job.order,
+        utm: job.utm,
+        coupon: coupon ?? '',
+        checkout_url,
+        checkout_suffix,
+        // Buyer number for @mentions — digits only, no "+".
+        mention: phone,
+        phone,
+      };
       const messageText = render(msg.text, ctx);
       if (!messageText.trim()) continue;
 

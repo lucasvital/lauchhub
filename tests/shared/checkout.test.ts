@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { buildCheckoutLinks } from '../../src/shared/checkout.js';
+import { assembleUtm, buildCheckoutLinks } from '../../src/shared/checkout.js';
+
+describe('assembleUtm', () => {
+  it('returns empty for null/empty', () => {
+    expect(assembleUtm(null)).toBe('');
+    expect(assembleUtm({})).toBe('');
+    expect(assembleUtm({ utm_source: '   ' })).toBe('');
+  });
+
+  it('joins set keys in canonical order and url-encodes values', () => {
+    expect(
+      assembleUtm({ utm_campaign: 'bbe h', utm_source: 'whatsapp', utm_term: 'bbe-a2' }),
+    ).toBe('utm_source=whatsapp&utm_campaign=bbe%20h&utm_term=bbe-a2');
+  });
+
+  it('skips blank values', () => {
+    expect(assembleUtm({ utm_source: 'ig', utm_medium: '', utm_campaign: 'x' })).toBe(
+      'utm_source=ig&utm_campaign=x',
+    );
+  });
+});
 
 describe('buildCheckoutLinks', () => {
   it('returns empty when there is no checkout code', () => {

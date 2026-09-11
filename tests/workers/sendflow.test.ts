@@ -128,6 +128,43 @@ describe('processSendflowJob — group messages', () => {
     expect(result).toMatchObject({ posted: 1, removed: 1, failed: 0 });
   });
 
+  it('builds {{checkout_url}} with the per-message UTM (overriding the campaign default)', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    const job = makeJob({
+      accountId: 'acc-9',
+      messages: [
+        { text: 'Compre agora 👉 {{checkout_url}}', utm: { utm_source: 'whatsapp', utm_campaign: 'bbe-h' } },
+      ],
+    });
+    job.order.checkout_link = 'DsybU94';
+    job.config.coupon = 'VOLTA10';
+    job.config.checkout_utm = 'utm_source=campanha&utm_campaign=default';
+
+    await processSendflowJob(job, { remove, sendGroup, sleepMs: 0 });
+
+    expect(sendGroup.mock.calls[0][0].messageText).toBe(
+      'Compre agora 👉 https://pay.kiwify.com.br/DsybU94?coupon=VOLTA10&utm_source=whatsapp&utm_campaign=bbe-h',
+    );
+  });
+
+  it('falls back to the campaign checkout_utm when the message has no UTM of its own', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    const job = makeJob({
+      accountId: 'acc-9',
+      messages: [{ text: 'Link: {{checkout_url}}' }],
+    });
+    job.order.checkout_link = 'DsybU94';
+    job.config.checkout_utm = 'utm_campaign=default';
+
+    await processSendflowJob(job, { remove, sendGroup, sleepMs: 0 });
+
+    expect(sendGroup.mock.calls[0][0].messageText).toBe(
+      'Link: https://pay.kiwify.com.br/DsybU94?utm_campaign=default',
+    );
+  });
+
   it('still removes even without messages/account configured', async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
     const sendGroup = vi.fn();
