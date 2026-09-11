@@ -142,6 +142,7 @@ export interface Campaign {
   checkout_links: string[];
   utm_term_match: string | null;
   coupon: string | null;
+  checkout_utm: string | null;
   sendflow_release_id: string | null;
   sendflow_group_ids: string[];
   sendflow_account_id: string | null;

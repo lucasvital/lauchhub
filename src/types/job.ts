@@ -188,6 +188,9 @@ export interface JobConfigSlice {
   // Per-campaign discount coupon, appended to the checkout URL exposed to
   // templates as {{checkout_url}}.
   coupon?: string | null;
+  // Per-campaign UTM query fragment appended to {{checkout_url}} /
+  // {{checkout_suffix}} for tracking (e.g. "utm_source=whatsapp&utm_campaign=bbe-h").
+  checkout_utm?: string | null;
 
   // SendFlow — remove the buyer from WhatsApp group(s) of a SendFlow release.
   // API key is a global secret read at runtime; only the per-campaign target

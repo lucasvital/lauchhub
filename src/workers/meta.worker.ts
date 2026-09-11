@@ -107,7 +107,7 @@ export async function processMetaJob(
   const coupon = job.config.coupon ?? null;
   // `checkout_url` is the full link (body); `checkout_suffix` is the base-less
   // part for a WhatsApp URL-BUTTON (whose base is fixed in the approved template).
-  const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon);
+  const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon, job.config.checkout_utm);
 
   // Render param values against the job context (templating support).
   const ctx = {
