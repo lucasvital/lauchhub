@@ -383,6 +383,24 @@ export function CampaignDetailPage() {
               desconto.
             </span>
           </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              UTM do checkout
+            </span>
+            <input
+              defaultValue={c.checkout_utm ?? ''}
+              onBlur={(e) => {
+                if (e.target.value !== (c.checkout_utm ?? ''))
+                  patchCampaign.mutate({ checkout_utm: e.target.value || null });
+              }}
+              placeholder="ex: utm_source=whatsapp&utm_campaign=bbe-h"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+              Acrescentado no fim de <code>{'{{checkout_url}}'}</code> (depois do cupom, se houver),
+              pra rastrear vendas vindas do link de recuperação/boas-vindas. Cole só os parâmetros{' '}
+              <code>utm_*</code> (sem <code>?</code> inicial).
+            </span>
+          </label>
           <SendflowPicker
             releaseId={c.sendflow_release_id}
             groupIds={c.sendflow_group_ids ?? []}

@@ -136,7 +136,7 @@ export async function processSendflowJob(
   // 1) Post the message(s) to the group(s), mentioning the buyer.
   if (wantsPost) {
     const coupon = job.config.coupon ?? null;
-    const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon);
+    const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon, job.config.checkout_utm);
     const ctx = {
       contact: job.contact,
       order: job.order,

@@ -113,7 +113,7 @@ export async function processMauticJob(
   // checkout link vars as the Meta worker so a Mautic custom field / tag can
   // carry the recovery link + coupon (e.g. {{checkout_url}} for a recovery email).
   const coupon = job.config.coupon ?? null;
-  const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon);
+  const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon, job.config.checkout_utm);
   const ctx = {
     contact: job.contact,
     order: job.order,

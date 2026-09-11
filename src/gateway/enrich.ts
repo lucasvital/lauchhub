@@ -57,6 +57,7 @@ async function sliceConfig(
         mautic_password: creds.password,
         mautic_event: campaign.mautic_event_config[event] ?? null,
         coupon: campaign.coupon,
+        checkout_utm: campaign.checkout_utm,
       };
     }
     case 'meta': {
@@ -70,6 +71,7 @@ async function sliceConfig(
         chatwoot_inbox_id: campaign.chatwoot_inbox_id,
         meta_template: campaign.meta_templates[event] ?? null,
         coupon: campaign.coupon,
+        checkout_utm: campaign.checkout_utm,
       };
     }
     case 'sendflow':
@@ -82,6 +84,7 @@ async function sliceConfig(
         sendflow_messages: campaign.sendflow_messages[event]?.messages ?? [],
         sendflow_remove_delay_minutes: campaign.sendflow_remove_delay_minutes,
         coupon: campaign.coupon,
+        checkout_utm: campaign.checkout_utm,
       };
   }
 }
