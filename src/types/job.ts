@@ -112,6 +112,13 @@ export interface MetaTemplateConfig {
    * template payload (processed_params.buttons).
    */
   button_url_param?: string;
+  /**
+   * Per-event UTM params for this template's {{checkout_url}}/{{checkout_suffix}}.
+   * When any key is set it OVERRIDES the campaign-level `checkout_utm`; empty
+   * falls back to the campaign default. Keys: utm_source, utm_medium,
+   * utm_campaign, utm_term, utm_content.
+   */
+  utm?: Record<string, string> | null;
 }
 
 /**

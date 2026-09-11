@@ -119,6 +119,10 @@ export interface MetaTemplateConfig {
   template_params: Record<string, string>;
   language?: string;
   button_url_param?: string;
+  /** Per-event UTM params that override the campaign checkout_utm for this
+   *  template's {{checkout_url}}/{{checkout_suffix}}. Keys: utm_source,
+   *  utm_medium, utm_campaign, utm_term, utm_content. */
+  utm?: Record<string, string> | null;
 }
 
 export interface Campaign {

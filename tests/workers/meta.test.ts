@@ -299,6 +299,57 @@ describe('processMetaJob — template send via Chatwoot', () => {
     );
   });
 
+  it('applies the per-event template UTM to the button suffix (overriding the campaign)', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 1 });
+    const job = makeJob({
+      template: {
+        template_name: 'boas_vindas_compra',
+        language: 'pt_BR',
+        template_params: { '1': '{{contact.first_name}}' },
+        button_url_param: '{{checkout_suffix}}',
+        utm: { utm_source: 'whatsapp', utm_campaign: 'bbe-h' },
+      },
+    });
+    job.order.checkout_link = '0BoTnag';
+    job.config.coupon = 'VOLTA10';
+    job.config.checkout_utm = 'utm_campaign=default';
+
+    await processMetaJob(job, adapter);
+
+    expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(
+      cfg,
+      99,
+      expect.objectContaining({
+        button_url_param: '0BoTnag?coupon=VOLTA10&utm_source=whatsapp&utm_campaign=bbe-h',
+      }),
+    );
+  });
+
+  it('falls back to the campaign checkout_utm when the template has no UTM', async () => {
+    const adapter = makeAdapter();
+    adapter.searchByPhone.mockResolvedValue({ id: 1 });
+    const job = makeJob({
+      template: {
+        template_name: 'boas_vindas_compra',
+        language: 'pt_BR',
+        template_params: { '1': '{{contact.first_name}}' },
+        button_url_param: '{{checkout_suffix}}',
+      },
+    });
+    job.order.checkout_link = '0BoTnag';
+    job.config.coupon = null;
+    job.config.checkout_utm = 'utm_campaign=default';
+
+    await processMetaJob(job, adapter);
+
+    expect(adapter.sendTemplateMessage).toHaveBeenCalledWith(
+      cfg,
+      99,
+      expect.objectContaining({ button_url_param: '0BoTnag?utm_campaign=default' }),
+    );
+  });
+
   it('builds checkout_url without a coupon query when no coupon is set', async () => {
     const adapter = makeAdapter();
     adapter.searchByPhone.mockResolvedValue({ id: 1 });
