@@ -12,7 +12,7 @@ import {
   type ChatwootTemplate,
 } from '../integrations/chatwoot/client.js';
 import { logger } from '../shared/logger.js';
-import { buildCheckoutLinks } from '../shared/checkout.js';
+import { assembleUtm, buildCheckoutLinks } from '../shared/checkout.js';
 import { render, renderRecord } from '../shared/template.js';
 import type { WebhookJob } from '../types/job.js';
 
@@ -105,9 +105,12 @@ export async function processMetaJob(
   // template can drop it in as {{checkout_url}} (e.g. abandoned-cart recovery).
   // Base is Kiwify's pay domain + the checkout code from the payload.
   const coupon = job.config.coupon ?? null;
+  // Per-event UTM (configured on the template) overrides the campaign-level
+  // checkout_utm when it has any key set; otherwise fall back to the campaign.
+  const utmFragment = assembleUtm(meta.utm) || job.config.checkout_utm;
   // `checkout_url` is the full link (body); `checkout_suffix` is the base-less
   // part for a WhatsApp URL-BUTTON (whose base is fixed in the approved template).
-  const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon, job.config.checkout_utm);
+  const { checkout_url, checkout_suffix } = buildCheckoutLinks(job.order.checkout_link, coupon, utmFragment);
 
   // Render param values against the job context (templating support).
   const ctx = {

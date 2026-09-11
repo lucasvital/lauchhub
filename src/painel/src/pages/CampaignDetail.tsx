@@ -534,6 +534,9 @@ export function CampaignDetailPage() {
         chatwootInstanceId={c.chatwoot_instance_id}
         chatwootInboxId={c.chatwoot_inbox_id}
         config={c.meta_templates}
+        coupon={c.coupon}
+        campaignUtm={c.checkout_utm}
+        exampleCode={c.checkout_links?.[0] ?? ''}
         onSave={(next) => patchCampaign.mutate({ meta_templates: next })}
         saving={patchCampaign.isPending}
       />
@@ -1147,12 +1150,18 @@ function MetaTemplatesEditor({
   chatwootInstanceId,
   chatwootInboxId,
   config,
+  coupon,
+  campaignUtm,
+  exampleCode,
   onSave,
   saving,
 }: {
   chatwootInstanceId: string | null;
   chatwootInboxId: number | null;
   config: Partial<Record<EventId, MetaTemplateConfig>>;
+  coupon: string | null;
+  campaignUtm: string | null;
+  exampleCode: string;
   onSave: (next: Partial<Record<EventId, MetaTemplateConfig>>) => void;
   saving: boolean;
 }) {
@@ -1189,9 +1198,24 @@ function MetaTemplatesEditor({
   function updateParam(key: string, value: string) {
     setDraft((d) => ({ ...d, template_params: { ...d.template_params, [key]: value } }));
   }
+  function updateUtm(key: string, value: string) {
+    setDraft((d) => {
+      const utm = { ...(d.utm ?? {}) };
+      if (value.trim()) utm[key] = value;
+      else delete utm[key];
+      return { ...d, utm: Object.keys(utm).length ? utm : null };
+    });
+  }
   function clearEvent() {
     setDraft(emptyMetaTemplateConfig());
   }
+
+  const metaFrag = assembleUtmFragment(draft.utm);
+  const usingCampaignUtm = !metaFrag;
+  const effectiveFrag = metaFrag || (campaignUtm ?? '');
+  const previewFull = buildCheckoutPreview(exampleCode || 'SEU_CODIGO', coupon, effectiveFrag);
+  // The button carries only the base-less suffix (base is fixed in the Meta template).
+  const previewSuffix = previewFull.replace('https://pay.kiwify.com.br/', '');
 
   return (
     <Card accent="amber" className="mt-6">
@@ -1323,23 +1347,92 @@ function MetaTemplatesEditor({
         )}
 
         {draft.template_name && (
+          <div className="mt-4 rounded-md border border-border bg-dim/40 p-3">
+            <ChipListHeader
+              label="UTM do link"
+              hint="Rastreio aplicado ao {{checkout_url}} do corpo e ao {{checkout_suffix}} do botão"
+            />
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {UTM_FIELDS.map((f) => (
+                <label key={f.key} className="block">
+                  <span className="mb-1 block text-[10px] lowercase tracking-[0.04em] text-muted-2">
+                    {f.label}
+                  </span>
+                  <input
+                    value={draft.utm?.[f.key] ?? ''}
+                    onChange={(e) => updateUtm(f.key, e.target.value)}
+                    placeholder={f.placeholder}
+                    spellCheck={false}
+                    autoComplete="off"
+                    className="!py-1.5 !px-2.5 !text-[12px]"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="mt-3 space-y-2">
+              <div>
+                <span className="mb-1 block text-[9px] uppercase tracking-[0.12em] text-muted-2">
+                  Link completo (corpo · {'{{checkout_url}}'})
+                  {usingCampaignUtm && campaignUtm ? ' — UTM da campanha' : ''}
+                </span>
+                <a
+                  href={previewFull}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block break-all rounded-sm border border-border bg-bg px-3 py-2 text-[11.5px] text-accent-2 hover:border-accent-2"
+                >
+                  {previewFull}
+                </a>
+              </div>
+              <div>
+                <span className="mb-1 block text-[9px] uppercase tracking-[0.12em] text-muted-2">
+                  Sufixo do botão ({'{{checkout_suffix}}'})
+                </span>
+                <code className="block break-all rounded-sm border border-border bg-bg px-3 py-2 text-[11.5px] text-accent-3">
+                  {previewSuffix}
+                </code>
+              </div>
+            </div>
+            <span className="mt-2 block text-[10px] leading-relaxed text-muted-2">
+              {exampleCode
+                ? 'Usando o primeiro checkout da campanha como exemplo.'
+                : 'Cadastre um checkout no bloco acima pra ver o código real; aqui vai SEU_CODIGO.'}{' '}
+              Vazio aqui = usa a "UTM do checkout" da campanha.
+            </span>
+          </div>
+        )}
+
+        {draft.template_name && (
           <label className="mt-4 block">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
               Botão de URL (opcional)
             </span>
-            <input
-              type="text"
-              value={draft.button_url_param ?? ''}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, button_url_param: e.target.value || undefined }))
-              }
-              placeholder="ex: {{checkout_suffix}}  (só o sufixo — a base fica no template da Meta)"
-              className="!py-1.5 !px-2.5 !text-[12px]"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={draft.button_url_param ?? ''}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, button_url_param: e.target.value || undefined }))
+                }
+                placeholder="ex: {{checkout_suffix}}  (só o sufixo — a base fica no template da Meta)"
+                className="!py-1.5 !px-2.5 !text-[12px] flex-1 min-w-[240px]"
+              />
+              {draft.button_url_param !== '{{checkout_suffix}}' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setDraft((d) => ({ ...d, button_url_param: '{{checkout_suffix}}' }))
+                  }
+                >
+                  usar {'{{checkout_suffix}}'}
+                </Button>
+              )}
+            </div>
             <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
-              Preenche a variável do botão de URL dinâmico. Deixe vazio se o link vai só no corpo
-              ({'{{checkout_url}}'}). Requer template com botão de URL aprovado na Meta e Chatwoot com
-              suporte a parâmetro de botão — teste antes de confiar.
+              Preenche a variável do botão de URL dinâmico com o sufixo (código + cupom + UTM acima).
+              Deixe vazio se o link vai só no corpo ({'{{checkout_url}}'}). Requer template com botão de
+              URL aprovado na Meta e Chatwoot com suporte a parâmetro de botão — teste antes de confiar.
             </span>
           </label>
         )}
