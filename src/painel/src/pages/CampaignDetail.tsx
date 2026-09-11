@@ -541,6 +541,9 @@ export function CampaignDetailPage() {
       <SendflowMessagesEditor
         config={c.sendflow_messages}
         accountId={c.sendflow_account_id}
+        coupon={c.coupon}
+        campaignUtm={c.checkout_utm}
+        exampleCode={c.checkout_links?.[0] ?? ''}
         onSave={(next) => patchCampaign.mutate({ sendflow_messages: next })}
         saving={patchCampaign.isPending}
       />
@@ -1593,14 +1596,50 @@ function SheetsPicker({
   );
 }
 
+const UTM_FIELDS = [
+  { key: 'utm_source', label: 'utm_source', placeholder: 'ex: whatsapp' },
+  { key: 'utm_medium', label: 'utm_medium', placeholder: 'ex: grupo' },
+  { key: 'utm_campaign', label: 'utm_campaign', placeholder: 'ex: bbe-h' },
+  { key: 'utm_term', label: 'utm_term', placeholder: 'ex: bbe-a2' },
+  { key: 'utm_content', label: 'utm_content', placeholder: 'ex: msg01' },
+] as const;
+
+/** Assemble "utm_source=x&utm_campaign=y" from a params object (blank keys skipped). */
+function assembleUtmFragment(utm: Record<string, string> | null | undefined): string {
+  if (!utm) return '';
+  return UTM_FIELDS.map((f) => {
+    const v = (utm[f.key] ?? '').trim();
+    return v ? `${f.key}=${encodeURIComponent(v)}` : '';
+  })
+    .filter(Boolean)
+    .join('&');
+}
+
+/** Mirror of buildCheckoutLinks() for the panel preview: base + code + ?coupon&utm. */
+function buildCheckoutPreview(code: string, coupon: string | null, utmFragment: string): string {
+  if (!code) return '';
+  const params: string[] = [];
+  if (coupon) params.push(`coupon=${encodeURIComponent(coupon)}`);
+  const clean = utmFragment.trim().replace(/^[?&]+/, '').replace(/&+$/, '');
+  if (clean) params.push(clean);
+  const suffix = params.length ? `${code}?${params.join('&')}` : code;
+  return `https://pay.kiwify.com.br/${suffix}`;
+}
+
 function SendflowMessagesEditor({
   config,
   accountId,
+  coupon,
+  campaignUtm,
+  exampleCode,
   onSave,
   saving,
 }: {
   config: Partial<Record<EventId, SendflowEventConfig>>;
   accountId: string | null;
+  coupon: string | null;
+  campaignUtm: string | null;
+  exampleCode: string;
   onSave: (next: Partial<Record<EventId, SendflowEventConfig>>) => void;
   saving: boolean;
 }) {
@@ -1618,7 +1657,18 @@ function SendflowMessagesEditor({
   function updateMessage(i: number, text: string) {
     setDraft((d) => {
       const next = [...(d.messages ?? [])];
-      next[i] = { text };
+      next[i] = { ...next[i], text };
+      return { messages: next };
+    });
+  }
+  function updateMessageUtm(i: number, key: string, value: string) {
+    setDraft((d) => {
+      const next = [...(d.messages ?? [])];
+      const current = next[i] ?? { text: '' };
+      const utm = { ...(current.utm ?? {}) };
+      if (value.trim()) utm[key] = value;
+      else delete utm[key];
+      next[i] = { ...current, utm: Object.keys(utm).length ? utm : null };
       return { messages: next };
     });
   }
@@ -1673,26 +1723,97 @@ function SendflowMessagesEditor({
             Nenhuma mensagem para este evento. Adicione uma abaixo.
           </p>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className="flex items-start gap-2">
-            <span className="mt-2 w-5 text-right text-[11px] text-muted-2">{i + 1}.</span>
-            <textarea
-              rows={3}
-              value={m.text}
-              onChange={(e) => updateMessage(i, e.target.value)}
-              placeholder="Parabéns {{contact.first_name}}, você acabou de garantir sua vaga! 🎉"
-              style={{ resize: 'vertical', fontFamily: '"JetBrains Mono", monospace' }}
-              className="flex-1"
-            />
-            <button
-              type="button"
-              onClick={() => removeMessage(i)}
-              className="mt-1 rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
-            >
-              remover
-            </button>
-          </div>
-        ))}
+        {messages.map((m, i) => {
+          const msgFrag = assembleUtmFragment(m.utm);
+          const usingCampaign = !msgFrag;
+          const effectiveFrag = msgFrag || (campaignUtm ?? '');
+          const hasLink = m.text.includes('{{checkout_url}}') || m.text.includes('{{checkout_suffix}}');
+          const preview = buildCheckoutPreview(exampleCode || 'SEU_CODIGO', coupon, effectiveFrag);
+          return (
+            <div key={i} className="rounded-md border border-border bg-dim/40 p-3">
+              <div className="flex items-start gap-2">
+                <span className="mt-2 w-5 text-right text-[11px] text-muted-2">{i + 1}.</span>
+                <textarea
+                  rows={3}
+                  value={m.text}
+                  onChange={(e) => updateMessage(i, e.target.value)}
+                  placeholder="Parabéns {{contact.first_name}}! Garanta sua próxima etapa 👉 {{checkout_url}}"
+                  style={{ resize: 'vertical', fontFamily: '"JetBrains Mono", monospace' }}
+                  className="flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeMessage(i)}
+                  className="mt-1 rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
+                >
+                  remover
+                </button>
+              </div>
+
+              <details className="ml-7 mt-2 group">
+                <summary className="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.08em] text-accent list-none">
+                  <span className="inline-block transition-transform group-open:rotate-90">▸</span> UTM do
+                  link {'{{checkout_url}}'}
+                  {!usingCampaign && (
+                    <span className="ml-2 rounded-sm bg-accent-glow px-1.5 py-0.5 text-[9px] tracking-[0.06em] text-accent">
+                      próprio
+                    </span>
+                  )}
+                  {usingCampaign && campaignUtm && (
+                    <span className="ml-2 rounded-sm border border-border-2 px-1.5 py-0.5 text-[9px] tracking-[0.06em] text-muted-2">
+                      usando da campanha
+                    </span>
+                  )}
+                </summary>
+
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {UTM_FIELDS.map((f) => (
+                      <label key={f.key} className="block">
+                        <span className="mb-1 block text-[10px] lowercase tracking-[0.04em] text-muted-2">
+                          {f.label}
+                        </span>
+                        <input
+                          value={m.utm?.[f.key] ?? ''}
+                          onChange={(e) => updateMessageUtm(i, f.key, e.target.value)}
+                          placeholder={f.placeholder}
+                          spellCheck={false}
+                          autoComplete="off"
+                          className="text-[12px]"
+                        />
+                      </label>
+                    ))}
+                  </div>
+
+                  <div>
+                    <span className="mb-1 block text-[9px] uppercase tracking-[0.12em] text-muted-2">
+                      Prévia do link {usingCampaign && campaignUtm ? '(UTM da campanha)' : ''}
+                    </span>
+                    <a
+                      href={preview}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block break-all rounded-sm border border-border bg-bg px-3 py-2 text-[11.5px] text-accent-2 hover:border-accent-2"
+                    >
+                      {preview}
+                    </a>
+                    <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+                      {exampleCode
+                        ? 'Usando o primeiro checkout da campanha como exemplo.'
+                        : 'Cadastre um checkout no bloco acima pra ver o código real; aqui vai SEU_CODIGO.'}{' '}
+                      {!hasLink && (
+                        <span className="text-accent-4">
+                          Esta mensagem ainda não usa {'{{checkout_url}}'} — adicione no texto pra o link
+                          aparecer.
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          );
+        })}
         <Button variant="ghost" size="sm" onClick={addMessage}>
           + mensagem
         </Button>

@@ -211,6 +211,10 @@ export interface SendflowReleaseOption {
 
 export interface SendflowTextMessage {
   text: string;
+  /** Per-message UTM params that override the campaign checkout_utm for this
+   *  message's {{checkout_url}}. Keys: utm_source, utm_medium, utm_campaign,
+   *  utm_term, utm_content. */
+  utm?: Record<string, string> | null;
 }
 
 export interface SendflowEventConfig {

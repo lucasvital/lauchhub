@@ -120,6 +120,13 @@ export interface MetaTemplateConfig {
  */
 export interface SendflowTextMessage {
   text: string;
+  /**
+   * Per-message UTM params for this message's {{checkout_url}}. When any key is
+   * set it OVERRIDES the campaign-level `checkout_utm` for this message only;
+   * empty/absent falls back to the campaign default. Keys: utm_source,
+   * utm_medium, utm_campaign, utm_term, utm_content.
+   */
+  utm?: Record<string, string> | null;
 }
 
 /**
