@@ -221,8 +221,13 @@ export interface SendflowTextMessage {
   utm?: Record<string, string> | null;
 }
 
+export type SendflowSendMode = 'all' | 'random';
+
 export interface SendflowEventConfig {
   messages: SendflowTextMessage[];
+  /** 'all' = post every message in order (default); 'random' = post ONE random
+   *  message from the list (variations). */
+  send_mode?: SendflowSendMode;
 }
 
 export interface SendflowBroadcast {

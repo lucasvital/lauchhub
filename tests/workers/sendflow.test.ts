@@ -12,6 +12,7 @@ function makeJob(
     messages?: SendflowTextMessage[];
     removeDelayMinutes?: number;
     action?: 'process' | 'remove';
+    sendMode?: 'all' | 'random';
   } = {},
 ): WebhookJob {
   return {
@@ -59,6 +60,7 @@ function makeJob(
       sendflow_group_ids: overrides.groupIds ?? ['120363000000000001'],
       sendflow_account_id: overrides.accountId === undefined ? null : overrides.accountId,
       sendflow_messages: overrides.messages ?? [],
+      sendflow_send_mode: overrides.sendMode,
       sendflow_remove_delay_minutes: overrides.removeDelayMinutes,
     },
     received_at: '2026-05-15T18:00:00Z',
@@ -126,6 +128,42 @@ describe('processSendflowJob — group messages', () => {
     });
     expect(order).toEqual(['post', 'remove']); // message first, then remove
     expect(result).toMatchObject({ posted: 1, removed: 1, failed: 0 });
+  });
+
+  it('posts every message in order by default (send_mode "all")', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    await processSendflowJob(
+      makeJob({
+        accountId: 'acc-9',
+        messages: [{ text: 'A' }, { text: 'B' }, { text: 'C' }],
+      }),
+      { remove, sendGroup, sleepMs: 0 },
+    );
+    expect(sendGroup).toHaveBeenCalledTimes(3);
+    expect(sendGroup.mock.calls.map((c) => c[0].messageText)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('posts exactly ONE random variation when send_mode is "random"', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    // Math.random → 0.5 with 4 variations picks index floor(0.5*4)=2 → 'C'.
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    try {
+      const result = await processSendflowJob(
+        makeJob({
+          accountId: 'acc-9',
+          sendMode: 'random',
+          messages: [{ text: 'A' }, { text: 'B' }, { text: 'C' }, { text: 'D' }],
+        }),
+        { remove, sendGroup, sleepMs: 0 },
+      );
+      expect(sendGroup).toHaveBeenCalledTimes(1);
+      expect(sendGroup.mock.calls[0][0].messageText).toBe('C');
+      expect(result).toMatchObject({ posted: 1 });
+    } finally {
+      rnd.mockRestore();
+    }
   });
 
   it('builds {{checkout_url}} with the per-message UTM (overriding the campaign default)', async () => {

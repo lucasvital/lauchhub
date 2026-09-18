@@ -20,6 +20,7 @@ import {
   type SendflowGroupOption,
   type SendflowListResponse,
   type SendflowReleaseOption,
+  type SendflowSendMode,
   type SendflowTemplateOption,
   type SheetTabOption,
   type WorkerId,
@@ -1746,12 +1747,15 @@ function SendflowMessagesEditor({
   });
 
   const messages = draft.messages ?? [];
+  const sendMode = draft.send_mode ?? 'all';
+  const isRandom = sendMode === 'random';
+  const noun = isRandom ? 'variação' : 'mensagem';
 
   function updateMessage(i: number, text: string) {
     setDraft((d) => {
       const next = [...(d.messages ?? [])];
       next[i] = { ...next[i], text };
-      return { messages: next };
+      return { ...d, messages: next };
     });
   }
   function updateMessageUtm(i: number, key: string, value: string) {
@@ -1762,14 +1766,17 @@ function SendflowMessagesEditor({
       if (value.trim()) utm[key] = value;
       else delete utm[key];
       next[i] = { ...current, utm: Object.keys(utm).length ? utm : null };
-      return { messages: next };
+      return { ...d, messages: next };
     });
   }
+  function setSendMode(mode: SendflowSendMode) {
+    setDraft((d) => ({ ...d, send_mode: mode }));
+  }
   function addMessage() {
-    setDraft((d) => ({ messages: [...(d.messages ?? []), { text: '' }] }));
+    setDraft((d) => ({ ...d, messages: [...(d.messages ?? []), { text: '' }] }));
   }
   function removeMessage(i: number) {
-    setDraft((d) => ({ messages: (d.messages ?? []).filter((_, idx) => idx !== i) }));
+    setDraft((d) => ({ ...d, messages: (d.messages ?? []).filter((_, idx) => idx !== i) }));
   }
 
   return (
@@ -1778,8 +1785,8 @@ function SendflowMessagesEditor({
         <div>
           <h3>// SendFlow — mensagens no grupo por evento</h3>
           <p className="mt-1.5 text-[11px] text-muted">
-            Postadas <strong>no(s) grupo(s)</strong> selecionados no bloco acima (todos veem), na
-            ordem, antes de remover o comprador. Variáveis:{' '}
+            Postadas <strong>no(s) grupo(s)</strong> selecionados no bloco acima (todos veem), antes
+            de remover o comprador. Variáveis:{' '}
             <code className="text-accent-2">{'{{contact.first_name}}'}</code>,{' '}
             <code className="text-accent-2">{'{{contact.name}}'}</code>,{' '}
             <code className="text-accent-2">{'{{order.product_name}}'}</code>,{' '}
@@ -1810,10 +1817,56 @@ function SendflowMessagesEditor({
         </Callout>
       )}
 
+      <div className="mb-4">
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+          Como enviar
+        </span>
+        <div className="inline-flex overflow-hidden rounded-md border border-border">
+          {(
+            [
+              { mode: 'all' as const, label: 'Todas em ordem' },
+              { mode: 'random' as const, label: 'Sortear 1 aleatória' },
+            ]
+          ).map((opt) => (
+            <button
+              key={opt.mode}
+              type="button"
+              onClick={() => setSendMode(opt.mode)}
+              className={`px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors ${
+                sendMode === opt.mode
+                  ? 'bg-accent text-bg'
+                  : 'bg-transparent text-muted-2 hover:text-text'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <span className="mt-1.5 block text-[10px] leading-relaxed text-muted-2">
+          {isRandom ? (
+            <>
+              Cada compra recebe <strong className="text-text">uma</strong> das variações abaixo,
+              sorteada na hora. Cadastre quantas quiser — quanto mais, menos repetição.
+            </>
+          ) : (
+            <>
+              Todas as mensagens abaixo são postadas, na ordem — use pra uma sequência (ex:
+              boas-vindas + instrução).
+            </>
+          )}
+        </span>
+      </div>
+
+      {isRandom && messages.length === 1 && (
+        <Callout kind="tip">
+          Só há 1 variação — todo mundo vai receber ela. Adicione mais pra o sorteio fazer efeito.
+        </Callout>
+      )}
+
       <div className="space-y-3">
         {messages.length === 0 && (
           <p className="text-[11px] text-muted-2">
-            Nenhuma mensagem para este evento. Adicione uma abaixo.
+            Nenhuma {noun} para este evento. Adicione uma abaixo.
           </p>
         )}
         {messages.map((m, i) => {
@@ -1825,7 +1878,9 @@ function SendflowMessagesEditor({
           return (
             <div key={i} className="rounded-md border border-border bg-dim/40 p-3">
               <div className="flex items-start gap-2">
-                <span className="mt-2 w-5 text-right text-[11px] text-muted-2">{i + 1}.</span>
+                <span className="mt-2 w-5 text-right text-[11px] font-semibold text-muted-2">
+                  {isRandom ? String.fromCharCode(65 + i) : `${i + 1}.`}
+                </span>
                 <textarea
                   rows={3}
                   value={m.text}
@@ -1908,7 +1963,7 @@ function SendflowMessagesEditor({
           );
         })}
         <Button variant="ghost" size="sm" onClick={addMessage}>
-          + mensagem
+          + {noun}
         </Button>
       </div>
     </Card>
