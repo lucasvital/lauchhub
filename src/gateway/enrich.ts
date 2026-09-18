@@ -82,6 +82,7 @@ async function sliceConfig(
         sendflow_group_ids: campaign.sendflow_group_ids,
         sendflow_account_id: campaign.sendflow_account_id,
         sendflow_messages: campaign.sendflow_messages[event]?.messages ?? [],
+        sendflow_send_mode: campaign.sendflow_messages[event]?.send_mode ?? 'all',
         sendflow_remove_delay_minutes: campaign.sendflow_remove_delay_minutes,
         coupon: campaign.coupon,
         checkout_utm: campaign.checkout_utm,

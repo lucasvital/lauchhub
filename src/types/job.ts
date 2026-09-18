@@ -136,12 +136,21 @@ export interface SendflowTextMessage {
   utm?: Record<string, string> | null;
 }
 
+/** How the configured messages are dispatched for one event. */
+export type SendflowSendMode = 'all' | 'random';
+
 /**
  * Per-event SendFlow messages config (stored as campaigns.sendflow_messages).
- * One entry per EventId; messages sent in order to the buyer's number.
+ * One entry per EventId.
+ *
+ * `send_mode`:
+ *   'all'    (default) → post every message, in order (e.g. a sequence).
+ *   'random'           → treat the list as variations and post ONE at random,
+ *                        so each buyer gets a different congratulations text.
  */
 export interface SendflowEventConfig {
   messages: SendflowTextMessage[];
+  send_mode?: SendflowSendMode;
 }
 
 /**
@@ -215,6 +224,9 @@ export interface JobConfigSlice {
   // messages are resolved for the current event by enrich().
   sendflow_account_id?: string | null;
   sendflow_messages?: SendflowTextMessage[];
+  // How to dispatch the messages: 'all' posts every one in order (default);
+  // 'random' posts a single message picked at random from the list (variations).
+  sendflow_send_mode?: SendflowSendMode;
   // Minutes to wait AFTER posting the welcome message(s) before removing the
   // buyer from the group. 0 = remove immediately. Enforced via a delayed queue
   // job so the buyer has time to see the message.

@@ -137,8 +137,16 @@ export async function processSendflowJob(
   if (wantsPost) {
     const coupon = job.config.coupon ?? null;
 
-    for (let i = 0; i < messages.length; i += 1) {
-      const msg = messages[i];
+    // 'random' → treat the list as interchangeable variations and post ONE at
+    // random (each buyer gets a different congratulations). 'all' → post every
+    // message in order (a sequence). Default 'all' for backward compatibility.
+    const outgoing =
+      job.config.sendflow_send_mode === 'random'
+        ? [messages[Math.floor(Math.random() * messages.length)]]
+        : messages;
+
+    for (let i = 0; i < outgoing.length; i += 1) {
+      const msg = outgoing[i];
       if (!msg) continue;
       // Per-message UTM overrides the campaign default when it has any key set;
       // otherwise fall back to the campaign-level checkout_utm fragment.
@@ -179,7 +187,7 @@ export async function processSendflowJob(
       );
       if (ok) posted += 1;
       else failed += 1;
-      if (i < messages.length - 1) await sleep(sleepMs);
+      if (i < outgoing.length - 1) await sleep(sleepMs);
     }
     jobLog.info({ account_id: accountId, group_ids: groupIds, posted, failed }, 'sendflow_group_posted');
   }
