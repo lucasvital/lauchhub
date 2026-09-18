@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   buildNamesText,
   dueBroadcasts,
+  fireBroadcastNow,
   runBroadcastTick,
 } from '../../src/workers/broadcast-scheduler.js';
 import type { CampaignRow } from '../../src/db/campaigns.js';
@@ -52,6 +53,51 @@ describe('dueBroadcasts', () => {
     const due = dueBroadcasts([c], '09:00');
     expect(due).toHaveLength(1);
     expect(due[0]!.broadcast.id).toBe('n1');
+  });
+});
+
+describe('fireBroadcastNow', () => {
+  const namesBroadcast: SendflowBroadcast = {
+    id: 'n1',
+    enabled: true,
+    kind: 'names',
+    times: ['09:00'],
+    messages: ['Já entraram:\nINSERIR NOMES\n🔗 INSERIR LINK'],
+    send_mode: 'random',
+  };
+
+  it('posts immediately and returns the resolved preview + names count', async () => {
+    const c = campaign({ sendflow_broadcasts: [namesBroadcast] });
+    (c as unknown as { checkout_links: string[] }).checkout_links = ['DsybU94'];
+    const sendText = vi.fn().mockResolvedValue(true);
+    const res = await fireBroadcastNow(c, namesBroadcast, {
+      fetchNames: vi.fn().mockResolvedValue(['Ana', 'João']),
+      sendText,
+      sleepMs: 0,
+    });
+    expect(res).toMatchObject({ ok: true, posted: 1, namesCount: 2 });
+    expect(res.preview).toBe('Já entraram:\n• Ana\n• João\n🔗 https://pay.kiwify.com.br/DsybU94');
+    expect(sendText).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports no_names when the Sheet has no approved buyers', async () => {
+    const c = campaign({ sendflow_broadcasts: [namesBroadcast] });
+    const res = await fireBroadcastNow(c, namesBroadcast, {
+      fetchNames: vi.fn().mockResolvedValue([]),
+      sendText: vi.fn(),
+      sleepMs: 0,
+    });
+    expect(res).toMatchObject({ ok: false, reason: 'no_names', posted: 0 });
+  });
+
+  it('reports no_target when release/account/groups are missing', async () => {
+    const c = campaign({ sendflow_broadcasts: [namesBroadcast], sendflow_group_ids: [] });
+    const res = await fireBroadcastNow(c, namesBroadcast, {
+      fetchNames: vi.fn().mockResolvedValue(['Ana']),
+      sendText: vi.fn(),
+      sleepMs: 0,
+    });
+    expect(res).toMatchObject({ ok: false, reason: 'no_target' });
   });
 });
 

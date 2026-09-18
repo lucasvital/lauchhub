@@ -115,6 +115,74 @@ function campaignCheckoutUrl(campaign: CampaignRow): string {
   return buildCheckoutLinks(code, campaign.coupon, campaign.checkout_utm).checkout_url;
 }
 
+export interface FireNowResult {
+  ok: boolean;
+  /** Why nothing was posted, when ok=false. */
+  reason?: 'no_target' | 'no_content' | 'no_names' | 'template_not_found';
+  posted: number;
+  /** Names read from the Sheet (names kind). */
+  namesCount?: number;
+  /** The resolved text of the first message posted (for the panel preview). */
+  preview?: string;
+}
+
+/**
+ * Fire ONE broadcast right now, bypassing the schedule + idempotency ledger.
+ * Used by the panel's "Enviar agora" button so operators can test/trigger a
+ * broadcast without waiting for a scheduled minute. Returns a detailed result
+ * (what was posted, or why it was skipped) instead of just counters.
+ */
+export async function fireBroadcastNow(
+  campaign: CampaignRow,
+  broadcast: SendflowBroadcast,
+  deps: Pick<TickDeps, 'fetchNames' | 'sendText' | 'fetchTemplate' | 'send' | 'sleepMs'> = {},
+): Promise<FireNowResult> {
+  const fetchNames = deps.fetchNames ?? defaultFetchNames;
+  const sendText = deps.sendText ?? defaultSendText;
+  const fetchTemplate = deps.fetchTemplate ?? getMessageTemplate;
+  const send = deps.send ?? sendTemplateMessageToGroups;
+  const sleepMs = deps.sleepMs ?? 400;
+
+  const target = targetOf(campaign);
+  if (!target) return { ok: false, reason: 'no_target', posted: 0 };
+
+  if ((broadcast.kind ?? 'template') === 'names') {
+    const variations = (broadcast.messages ?? []).filter((m) => m.trim() !== '');
+    if (variations.length === 0) return { ok: false, reason: 'no_content', posted: 0 };
+
+    const names = await fetchNames(campaign, broadcast);
+    if (names.length === 0) return { ok: false, reason: 'no_names', posted: 0, namesCount: 0 };
+
+    const outgoing =
+      broadcast.send_mode === 'all'
+        ? variations
+        : [variations[Math.floor(Math.random() * variations.length)] ?? ''];
+    const checkoutUrl = campaignCheckoutUrl(campaign);
+
+    let posted = 0;
+    let preview: string | undefined;
+    for (let i = 0; i < outgoing.length; i += 1) {
+      const text = buildNamesText(outgoing[i] ?? '', names, checkoutUrl);
+      if (!text.trim()) continue;
+      if (preview === undefined) preview = text;
+      if (await sendText(text, target)) posted += 1;
+      if (i < outgoing.length - 1) await sleep(sleepMs);
+    }
+    return { ok: posted > 0, posted, namesCount: names.length, preview };
+  }
+
+  // template kind
+  if (!broadcast.template_id) return { ok: false, reason: 'no_content', posted: 0 };
+  const template = await fetchTemplate(broadcast.template_id);
+  if (!template) return { ok: false, reason: 'template_not_found', posted: 0 };
+  let posted = 0;
+  for (const [i, msg] of template.messages.entries()) {
+    if (await send(msg, target)) posted += 1;
+    if (i < template.messages.length - 1) await sleep(sleepMs);
+  }
+  return { ok: posted > 0, posted };
+}
+
 /**
  * One scheduler tick: find broadcasts due at the current São Paulo minute,
  * claim each (idempotency across restarts/overlaps), then replay the referenced
