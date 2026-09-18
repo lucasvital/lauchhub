@@ -81,6 +81,16 @@ describe('extractApprovedFirstNames', () => {
     expect(extractApprovedFirstNames(rows, { order: 'first' })).toEqual(['Ana', 'João', 'Maria']);
   });
 
+  it('accepts the raw Kiwify status "paid" (and ignores rows with no status)', () => {
+    const rows = [
+      header,
+      row('paid', 'Cleise Alves da Conceição Silva', 'cleisinha10@yahoo.com.br'),
+      row('', 'Lucas VVital', ''), // no status → not a confirmed purchase
+      row('PAID', 'Bruno Costa', 'bruno@x.com'), // case-insensitive
+    ];
+    expect(extractApprovedFirstNames(rows, { order: 'first' })).toEqual(['Cleise', 'Bruno']);
+  });
+
   it('dedupes by email (order bump / repeat rows) and ignores non-approved events', () => {
     const rows = [
       header,
