@@ -153,22 +153,47 @@ export interface SendflowEventConfig {
   send_mode?: SendflowSendMode;
 }
 
+/** Broadcast content source. */
+export type SendflowBroadcastKind = 'template' | 'names';
+
+/** Ordering for the buyers' name list in a 'names' broadcast. */
+export type SendflowNamesOrder = 'recent' | 'first';
+
 /**
  * A recurring SendFlow group broadcast (stored as campaigns.sendflow_broadcasts).
- * References a SendFlow message template (message + hosted video) and posts it
- * to the campaign's groups at fixed times of day, every day. Reuses the
- * campaign's release/account/group_ids.
+ * Posts to the campaign's groups at fixed times of day, every day (São Paulo).
+ * Reuses the campaign's release/account/group_ids.
+ *
+ * Two kinds:
+ *   'template' (default) → replays a SendFlow message-template (message + hosted
+ *                          video) referenced by `template_id`.
+ *   'names'             → posts a typed text (`messages` variations) with the
+ *                          buyers' first-name list read from the campaign Sheet,
+ *                          substituting {{names}} and {{checkout_url}} (or the
+ *                          literal tokens INSERIR NOMES / INSERIR LINK).
  */
 export interface SendflowBroadcast {
   /** Stable id (uuid) — also the idempotency key namespace. */
   id: string;
   enabled: boolean;
-  /** SendFlow message-template id whose messages get posted to the group(s). */
-  template_id: string;
+  /** Content source; defaults to 'template' when absent (back-compat). */
+  kind?: SendflowBroadcastKind;
+  /** SendFlow message-template id ('template' kind). */
+  template_id?: string;
   /** Label for the UI (the template title at selection time). */
   label?: string;
   /** Times of day in America/Sao_Paulo, "HH:MM" 24h (e.g. ["09:00","20:00"]). */
   times: string[];
+
+  // ─── 'names' kind ───
+  /** Text variations with {{names}} + {{checkout_url}} (or INSERIR NOMES / INSERIR LINK). */
+  messages?: string[];
+  /** 'all' posts every variation; 'random' (default for names) posts one. */
+  send_mode?: SendflowSendMode;
+  /** Max first names to list (default 30). */
+  names_limit?: number;
+  /** 'recent' = newest buyers first (default); 'first' = chronological. */
+  names_order?: SendflowNamesOrder;
 }
 
 /**

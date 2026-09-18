@@ -327,6 +327,77 @@ export async function findPurchaseRow(input: FindPurchaseInput): Promise<FindPur
   return { rowNumber, alreadyRefunded };
 }
 
+const COL_NAME = 3; //  D — Nome
+
+/** Extract and title-case the first name from a full name ("joão silva" → "João"). */
+export function firstNameOf(fullName: string): string {
+  const token = fullName.trim().split(/\s+/)[0] ?? '';
+  if (!token) return '';
+  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+}
+
+export interface ListBuyerNamesInput {
+  spreadsheetId: string;
+  tab: string;
+  /** Max names to return (after dedupe). */
+  limit?: number;
+  /** 'recent' = newest buyers first (default); 'first' = chronological. */
+  order?: 'recent' | 'first';
+}
+
+/**
+ * Pure: derive the first names of approved buyers from raw sheet rows (A:AG,
+ * including the header row). One name per unique buyer (deduped by email so
+ * order-bump / repeat-event rows don't double a person). Rows are in append
+ * order (chronological); 'recent' returns the newest first, 'first' keeps
+ * chronological. `limit` caps the count.
+ */
+export function extractApprovedFirstNames(
+  rows: string[][],
+  opts: { limit?: number; order?: 'recent' | 'first' } = {},
+): string[] {
+  const seen = new Set<string>(); // buyer emails already counted
+  const names: string[] = []; // first names, in chronological (append) order
+
+  // Skip header (row 0).
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    const event = (row[COL_EVENT] ?? '').trim().toLowerCase();
+    if (event !== 'compra_aprovada') continue;
+
+    const email = (row[COL_EMAIL] ?? '').trim().toLowerCase();
+    const dedupeKey = email || `__row_${i}`; // no email → treat as unique
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    const name = firstNameOf(row[COL_NAME] ?? '');
+    if (name) names.push(name);
+  }
+
+  const ordered = opts.order === 'first' ? names : names.slice().reverse();
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : ordered.length;
+  return ordered.slice(0, limit);
+}
+
+/**
+ * Read the campaign Sheet and return the first names of approved buyers. Used
+ * by the scheduled "list of contemplated buyers" broadcast.
+ */
+export async function listApprovedFirstNames(input: ListBuyerNamesInput): Promise<string[]> {
+  const client = await getClient();
+  const range = `${escapeTab(input.tab)}!A:AG`;
+  let rows: string[][];
+  try {
+    const r = await client.spreadsheets.values.get({ spreadsheetId: input.spreadsheetId, range });
+    rows = (r.data.values ?? []) as string[][];
+  } catch (err) {
+    const status = (err as { code?: number }).code;
+    if (typeof status === 'number') throw classifyHttpError(status, err);
+    throw new TransientError(`Sheets listApprovedFirstNames error: ${String(err)}`, 'network');
+  }
+  return extractApprovedFirstNames(rows, { limit: input.limit, order: input.order });
+}
+
 export interface UpdateEventInput {
   spreadsheetId: string;
   tab: string;

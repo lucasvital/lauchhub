@@ -230,12 +230,23 @@ export interface SendflowEventConfig {
   send_mode?: SendflowSendMode;
 }
 
+export type SendflowBroadcastKind = 'template' | 'names';
+export type SendflowNamesOrder = 'recent' | 'first';
+
 export interface SendflowBroadcast {
   id: string;
   enabled: boolean;
-  template_id: string;
+  /** 'template' (default) replays a SendFlow template; 'names' posts a text with
+   *  the buyers' first-name list read from the campaign Sheet. */
+  kind?: SendflowBroadcastKind;
+  template_id?: string;
   label?: string;
   times: string[];
+  // 'names' kind:
+  messages?: string[];
+  send_mode?: SendflowSendMode;
+  names_limit?: number;
+  names_order?: SendflowNamesOrder;
 }
 
 export interface SendflowTemplateMessage {

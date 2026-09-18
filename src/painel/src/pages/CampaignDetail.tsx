@@ -16,6 +16,7 @@ import {
   type MauticTagOption,
   type MetaTemplateConfig,
   type SendflowBroadcast,
+  type SendflowNamesOrder,
   type SendflowEventConfig,
   type SendflowGroupOption,
   type SendflowListResponse,
@@ -2012,8 +2013,48 @@ function BroadcastsEditor({
   function add() {
     onSave([
       ...broadcasts,
-      { id: crypto.randomUUID(), enabled: true, template_id: '', label: '', times: ['09:00'] },
+      {
+        id: crypto.randomUUID(),
+        enabled: true,
+        kind: 'template',
+        template_id: '',
+        label: '',
+        times: ['09:00'],
+      },
     ]);
+  }
+  function addNames() {
+    onSave([
+      ...broadcasts,
+      {
+        id: crypto.randomUUID(),
+        enabled: true,
+        kind: 'names',
+        label: 'Lista de contemplados',
+        times: ['09:00', '14:00', '20:00'],
+        messages: [''],
+        send_mode: 'random',
+        names_limit: 30,
+        names_order: 'recent',
+      },
+    ]);
+  }
+  function updateVariation(i: number, vi: number, text: string) {
+    const b = broadcasts[i];
+    if (!b) return;
+    const messages = [...(b.messages ?? [])];
+    messages[vi] = text;
+    update(i, { messages });
+  }
+  function addVariation(i: number) {
+    const b = broadcasts[i];
+    if (!b) return;
+    update(i, { messages: [...(b.messages ?? []), ''] });
+  }
+  function removeVariation(i: number, vi: number) {
+    const b = broadcasts[i];
+    if (!b) return;
+    update(i, { messages: (b.messages ?? []).filter((_, idx) => idx !== vi) });
   }
   function remove(i: number) {
     onSave(broadcasts.filter((_, idx) => idx !== i));
@@ -2033,9 +2074,10 @@ function BroadcastsEditor({
         <div>
           <h3>// SendFlow — reenvio agendado no grupo</h3>
           <p className="mt-1.5 text-[11px] text-muted">
-            Cadastre o conteúdo (mensagem + vídeo) como um <strong>modelo</strong> no SendFlow — o
-            vídeo fica hospedado lá. Aqui você escolhe o modelo e os horários; o LaunchHub reposta
-            no(s) grupo(s) da campanha nesses horários, todo dia (fuso São Paulo).
+            Postagens automáticas no(s) grupo(s) da campanha, nos horários definidos, todo dia (fuso
+            São Paulo). Dois tipos: <strong>modelo</strong> (mensagem + vídeo hospedados no SendFlow) e{' '}
+            <strong>lista de contemplados</strong> (texto com os nomes de quem já comprou, lidos da
+            planilha).
           </p>
         </div>
         <PickerStatus
@@ -2067,7 +2109,9 @@ function BroadcastsEditor({
           <p className="text-[11px] text-muted-2">Nenhum reenvio agendado. Adicione um abaixo.</p>
         )}
         {broadcasts.map((b, i) => {
+          const kind = b.kind ?? 'template';
           const tpl = templates.find((t) => t.id === b.template_id);
+          const variations = b.messages ?? [];
           return (
             <div key={b.id} className="rounded border border-border bg-dim p-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -2087,25 +2131,46 @@ function BroadcastsEditor({
                     }`}
                   />
                 </button>
-                <select
-                  value={b.template_id}
-                  onChange={(e) => {
-                    const t = templates.find((x) => x.id === e.target.value);
-                    update(i, { template_id: e.target.value, label: t?.title ?? '' });
-                  }}
-                  className="min-w-[200px] flex-1"
-                  disabled={q.isLoading}
+                <span
+                  className={`shrink-0 rounded-sm px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] ${
+                    kind === 'names'
+                      ? 'bg-accent-3/15 text-accent-3'
+                      : 'bg-accent/15 text-accent'
+                  }`}
                 >
-                  <option value="">— escolha o modelo —</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.title}
-                    </option>
-                  ))}
-                  {b.template_id && !templates.find((t) => t.id === b.template_id) && (
-                    <option value={b.template_id}>{b.label || b.template_id} (fora da lista)</option>
-                  )}
-                </select>
+                  {kind === 'names' ? 'lista de nomes' : 'modelo'}
+                </span>
+                {kind === 'template' ? (
+                  <select
+                    value={b.template_id ?? ''}
+                    onChange={(e) => {
+                      const t = templates.find((x) => x.id === e.target.value);
+                      update(i, { template_id: e.target.value, label: t?.title ?? '' });
+                    }}
+                    className="min-w-[200px] flex-1"
+                    disabled={q.isLoading}
+                  >
+                    <option value="">— escolha o modelo —</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
+                    ))}
+                    {b.template_id && !templates.find((t) => t.id === b.template_id) && (
+                      <option value={b.template_id}>{b.label || b.template_id} (fora da lista)</option>
+                    )}
+                  </select>
+                ) : (
+                  <input
+                    defaultValue={b.label ?? ''}
+                    key={`lbl-${b.id}`}
+                    onBlur={(e) => {
+                      if (e.target.value !== (b.label ?? '')) update(i, { label: e.target.value });
+                    }}
+                    placeholder="nome interno (ex: Lista de contemplados)"
+                    className="min-w-[200px] flex-1"
+                  />
+                )}
                 <input
                   defaultValue={b.times.join(', ')}
                   key={`t-${b.id}-${b.times.join(',')}`}
@@ -2124,19 +2189,117 @@ function BroadcastsEditor({
                   remover
                 </button>
               </div>
-              <div className="mt-1.5 pl-11 text-[10px] text-muted-2">
-                {tpl
-                  ? `modelo: ${summarize(tpl.messages)} · ${b.times.length} horário(s)/dia`
-                  : b.template_id
-                    ? 'modelo fora da lista atual (verifique a chave/permissão)'
-                    : 'escolha um modelo do SendFlow'}
-              </div>
+
+              {kind === 'template' && (
+                <div className="mt-1.5 pl-11 text-[10px] text-muted-2">
+                  {tpl
+                    ? `modelo: ${summarize(tpl.messages)} · ${b.times.length} horário(s)/dia`
+                    : b.template_id
+                      ? 'modelo fora da lista atual (verifique a chave/permissão)'
+                      : 'escolha um modelo do SendFlow'}
+                </div>
+              )}
+
+              {kind === 'names' && (
+                <div className="mt-3 space-y-3 pl-11">
+                  <p className="text-[10px] leading-relaxed text-muted-2">
+                    Use <code className="text-accent-2">INSERIR NOMES</code> onde entra a lista de
+                    quem já comprou (lida da planilha) e{' '}
+                    <code className="text-accent-2">INSERIR LINK</code> onde entra o link de compra.
+                    {variations.length > 1 && b.send_mode !== 'all'
+                      ? ' Uma variação é sorteada a cada horário.'
+                      : ''}
+                  </p>
+
+                  {variations.map((text, vi) => (
+                    <div key={vi} className="flex items-start gap-2">
+                      <span className="mt-2 w-5 text-right text-[11px] font-semibold text-muted-2">
+                        {String.fromCharCode(65 + vi)}
+                      </span>
+                      <textarea
+                        rows={5}
+                        value={text}
+                        onChange={(e) => updateVariation(i, vi, e.target.value)}
+                        placeholder={
+                          '📋 Famílias que já garantiram a bolsa até agora:\n\nINSERIR NOMES\n\nCada nome é uma vaga a menos.\n\n🔗 Garanta a sua: INSERIR LINK'
+                        }
+                        style={{ resize: 'vertical', fontFamily: '"JetBrains Mono", monospace' }}
+                        className="flex-1 !text-[12px]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeVariation(i, vi)}
+                        className="mt-1 rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
+                      >
+                        remover
+                      </button>
+                    </div>
+                  ))}
+                  <Button variant="ghost" size="sm" onClick={() => addVariation(i)}>
+                    + variação
+                  </Button>
+
+                  <div className="flex flex-wrap items-end gap-4 pt-1">
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] uppercase tracking-[0.06em] text-muted-2">
+                        Quando há várias variações
+                      </span>
+                      <select
+                        value={b.send_mode ?? 'random'}
+                        onChange={(e) =>
+                          update(i, { send_mode: e.target.value as 'all' | 'random' })
+                        }
+                        className="!w-auto !py-1.5 !px-2.5 !text-[12px]"
+                      >
+                        <option value="random">Sortear 1</option>
+                        <option value="all">Enviar todas</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] uppercase tracking-[0.06em] text-muted-2">
+                        Máx. de nomes
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        defaultValue={b.names_limit ?? 30}
+                        key={`nl-${b.id}`}
+                        onBlur={(e) => {
+                          const n = Math.max(1, Number(e.target.value) || 30);
+                          if (n !== (b.names_limit ?? 30)) update(i, { names_limit: n });
+                        }}
+                        className="!w-[90px] !py-1.5 !px-2.5 !text-[12px]"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] uppercase tracking-[0.06em] text-muted-2">
+                        Ordem
+                      </span>
+                      <select
+                        value={b.names_order ?? 'recent'}
+                        onChange={(e) =>
+                          update(i, { names_order: e.target.value as SendflowNamesOrder })
+                        }
+                        className="!w-auto !py-1.5 !px-2.5 !text-[12px]"
+                      >
+                        <option value="recent">Mais recentes primeiro</option>
+                        <option value="first">Ordem de compra</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
-        <Button variant="ghost" size="sm" onClick={add}>
-          + reenvio
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="ghost" size="sm" onClick={add}>
+            + modelo (mensagem/vídeo)
+          </Button>
+          <Button variant="ghost" size="sm" onClick={addNames}>
+            + lista de contemplados
+          </Button>
+        </div>
       </div>
     </Card>
   );
