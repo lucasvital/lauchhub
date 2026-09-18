@@ -554,6 +554,7 @@ export function CampaignDetailPage() {
       />
 
       <BroadcastsEditor
+        campaignId={c.id}
         broadcasts={c.sendflow_broadcasts ?? []}
         hasTarget={Boolean(
           c.sendflow_release_id && c.sendflow_account_id && (c.sendflow_group_ids ?? []).length > 0,
@@ -1994,11 +1995,68 @@ function normalizeTimes(raw: string): string[] {
     .filter((v): v is string => v !== null);
 }
 
+interface BroadcastTestResult {
+  ok: boolean;
+  result?: {
+    ok: boolean;
+    reason?: 'no_target' | 'no_content' | 'no_names' | 'template_not_found';
+    posted: number;
+    namesCount?: number;
+    preview?: string;
+  };
+  error?: string;
+  message?: string;
+}
+
+const TEST_REASON_TEXT: Record<string, string> = {
+  no_target: 'Falta a release, a conta ou o(s) grupo(s) no bloco SendFlow acima.',
+  no_content: 'Nenhuma variação de texto preenchida.',
+  no_names: 'A planilha não tem nenhuma compra aprovada ainda (ou a aba está errada).',
+  template_not_found: 'O modelo do SendFlow não foi encontrado.',
+};
+
+function BroadcastTestFeedback({ res }: { res: BroadcastTestResult }) {
+  // Network / server error (ok:false at the envelope level).
+  if (!res.ok && !res.result) {
+    return (
+      <div className="ml-11 mt-2">
+        <Callout kind="danger">Erro ao enviar: {res.message || res.error || 'desconhecido'}</Callout>
+      </div>
+    );
+  }
+  const r = res.result;
+  if (!r) return null;
+  if (!r.ok) {
+    return (
+      <div className="ml-11 mt-2">
+        <Callout kind="warn">
+          Não enviou — {r.reason ? TEST_REASON_TEXT[r.reason] ?? r.reason : 'nada foi postado'}
+        </Callout>
+      </div>
+    );
+  }
+  return (
+    <div className="ml-11 mt-2 space-y-2">
+      <Callout kind="tip">
+        Enviado ✓ {r.posted} mensagem(ns) postada(s) no grupo
+        {typeof r.namesCount === 'number' ? ` · ${r.namesCount} nome(s) na lista` : ''}.
+      </Callout>
+      {r.preview && (
+        <pre className="whitespace-pre-wrap rounded-sm border border-border bg-dim px-3 py-2 text-[12px] text-text">
+          {r.preview}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function BroadcastsEditor({
+  campaignId,
   broadcasts,
   hasTarget,
   onSave,
 }: {
+  campaignId: string;
   broadcasts: SendflowBroadcast[];
   hasTarget: boolean;
   onSave: (next: SendflowBroadcast[]) => void;
@@ -2006,6 +2064,24 @@ function BroadcastsEditor({
   const q = useSendflowTemplates();
   const templates = q.data?.items ?? [];
   const noApiKey = q.data?.ok === false && q.data?.error === 'no_api_key';
+
+  const [testResults, setTestResults] = useState<Record<string, BroadcastTestResult>>({});
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const testNow = useMutation({
+    mutationFn: (broadcastId: string) =>
+      api.post<BroadcastTestResult>(
+        `/api/campaigns/${campaignId}/broadcasts/${broadcastId}/test`,
+      ),
+    onMutate: (broadcastId: string) => setTestingId(broadcastId),
+    onSettled: () => setTestingId(null),
+    onSuccess: (data, broadcastId) =>
+      setTestResults((r) => ({ ...r, [broadcastId]: data })),
+    onError: (err, broadcastId) =>
+      setTestResults((r) => ({
+        ...r,
+        [broadcastId]: { ok: false, error: 'network', message: String(err) },
+      })),
+  });
 
   function update(i: number, patch: Partial<SendflowBroadcast>) {
     onSave(broadcasts.map((b, idx) => (idx === i ? { ...b, ...patch } : b)));
@@ -2183,12 +2259,25 @@ function BroadcastsEditor({
                 />
                 <button
                   type="button"
+                  onClick={() => testNow.mutate(b.id)}
+                  disabled={testingId === b.id || !hasTarget}
+                  title={!hasTarget ? 'Configure release/conta/grupo no bloco SendFlow acima' : ''}
+                  className="rounded-sm border border-accent-3/40 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-3 hover:bg-accent-3/15 disabled:opacity-40"
+                >
+                  {testingId === b.id ? 'enviando…' : 'enviar agora'}
+                </button>
+                <button
+                  type="button"
                   onClick={() => remove(i)}
                   className="rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
                 >
                   remover
                 </button>
               </div>
+
+              {testResults[b.id] && (
+                <BroadcastTestFeedback res={testResults[b.id]!} />
+              )}
 
               {kind === 'template' && (
                 <div className="mt-1.5 pl-11 text-[10px] text-muted-2">

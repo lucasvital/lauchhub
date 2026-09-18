@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import * as campaignsDb from '../../db/campaigns.js';
+import { fireBroadcastNow } from '../../workers/broadcast-scheduler.js';
+import { FatalError } from '../../integrations/_shared/errors.js';
 import type { EventId, WorkerId } from '../../types/job.js';
 
 export async function registerCampaignsRoutes(app: FastifyInstance): Promise<void> {
@@ -67,6 +69,27 @@ export async function registerCampaignsRoutes(app: FastifyInstance): Promise<voi
       if (!current) return reply.code(404).send({ ok: false, error: 'not_found' });
       const updated = await campaignsDb.setActive(req.params.id, !current.active);
       return { ok: true, campaign: updated };
+    },
+  );
+
+  // Fire one broadcast right now (panel "Enviar agora"), bypassing the schedule.
+  app.post<{ Params: { id: string; broadcastId: string } }>(
+    '/api/campaigns/:id/broadcasts/:broadcastId/test',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const c = await campaignsDb.findById(req.params.id);
+      if (!c) return reply.code(404).send({ ok: false, error: 'not_found' });
+      const broadcast = (c.sendflow_broadcasts ?? []).find((b) => b.id === req.params.broadcastId);
+      if (!broadcast) return reply.code(404).send({ ok: false, error: 'broadcast_not_found' });
+      try {
+        const result = await fireBroadcastNow(c, broadcast);
+        return { ok: true, result };
+      } catch (err) {
+        app.log.error({ err, campaign: c.id, broadcast: broadcast.id }, 'broadcast_test_failed');
+        const code = err instanceof FatalError ? err.code : 'error';
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.code(200).send({ ok: false, error: code, message });
+      }
     },
   );
 
