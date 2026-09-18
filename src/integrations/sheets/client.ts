@@ -346,11 +346,27 @@ export interface ListBuyerNamesInput {
 }
 
 /**
+ * Evento/status values (column C) that mean a paid, non-refunded purchase.
+ * LaunchHub's own sheets worker writes `compra_aprovada`; sheets populated by
+ * Kiwify/n8n (or older flows) store the raw order status `paid`. Accept both
+ * so the "list of contemplated buyers" broadcast works across data sources.
+ */
+const APPROVED_EVENTS = new Set([
+  'compra_aprovada',
+  'compra aprovada',
+  'aprovada',
+  'aprovado',
+  'paid',
+  'approved',
+]);
+
+/**
  * Pure: derive the first names of approved buyers from raw sheet rows (A:AG,
  * including the header row). One name per unique buyer (deduped by email so
  * order-bump / repeat-event rows don't double a person). Rows are in append
  * order (chronological); 'recent' returns the newest first, 'first' keeps
- * chronological. `limit` caps the count.
+ * chronological. `limit` caps the count. A row counts when its Evento/status
+ * column is one of APPROVED_EVENTS.
  */
 export function extractApprovedFirstNames(
   rows: string[][],
@@ -363,7 +379,7 @@ export function extractApprovedFirstNames(
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] ?? [];
     const event = (row[COL_EVENT] ?? '').trim().toLowerCase();
-    if (event !== 'compra_aprovada') continue;
+    if (!APPROVED_EVENTS.has(event)) continue;
 
     const email = (row[COL_EMAIL] ?? '').trim().toLowerCase();
     const dedupeKey = email || `__row_${i}`; // no email → treat as unique
