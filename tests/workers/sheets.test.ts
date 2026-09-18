@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import type { WebhookJob } from '../../src/types/job.js';
 import { buildRow, processSheetsJob } from '../../src/workers/sheets.worker.js';
 import { FatalError } from '../../src/integrations/_shared/errors.js';
-import { SHEETS_HEADER, splitRowForWrite } from '../../src/integrations/sheets/client.js';
+import {
+  SHEETS_HEADER,
+  extractApprovedFirstNames,
+  firstNameOf,
+  splitRowForWrite,
+} from '../../src/integrations/sheets/client.js';
 
 const sampleJob: WebhookJob = {
   correlation_id: 'corr-1',
@@ -44,6 +49,59 @@ const sampleJob: WebhookJob = {
   config: { sheets_id: 'sheet-abc', sheets_tab: 'vendas-2026' },
   received_at: '2026-05-14T18:00:00.000Z',
 };
+
+describe('firstNameOf', () => {
+  it('takes the first token and title-cases it', () => {
+    expect(firstNameOf('joão silva')).toBe('João');
+    expect(firstNameOf('MARIA DE LOURDES')).toBe('Maria');
+    expect(firstNameOf('  ana ')).toBe('Ana');
+    expect(firstNameOf('')).toBe('');
+  });
+});
+
+describe('extractApprovedFirstNames', () => {
+  // A:AG rows — only cols 2 (Evento), 3 (Nome), 4 (E-mail) matter here.
+  function row(event: string, name: string, email: string): string[] {
+    const r: string[] = new Array(33).fill('');
+    r[2] = event;
+    r[3] = name;
+    r[4] = email;
+    return r;
+  }
+  const header = SHEETS_HEADER as unknown as string[];
+
+  it('lists one first name per unique buyer, newest first by default', () => {
+    const rows = [
+      header,
+      row('compra_aprovada', 'Ana Paula', 'ana@x.com'),
+      row('compra_aprovada', 'João Silva', 'joao@x.com'),
+      row('compra_aprovada', 'Maria Lima', 'maria@x.com'),
+    ];
+    expect(extractApprovedFirstNames(rows)).toEqual(['Maria', 'João', 'Ana']);
+    expect(extractApprovedFirstNames(rows, { order: 'first' })).toEqual(['Ana', 'João', 'Maria']);
+  });
+
+  it('dedupes by email (order bump / repeat rows) and ignores non-approved events', () => {
+    const rows = [
+      header,
+      row('compra_aprovada', 'Ana Paula', 'ana@x.com'),
+      row('compra_aprovada', 'Ana P', 'ana@x.com'), // same buyer (order bump)
+      row('carrinho_abandonado', 'Carlos', 'carlos@x.com'), // not approved
+      row('compra_aprovada', 'Bruno Costa', 'bruno@x.com'),
+    ];
+    expect(extractApprovedFirstNames(rows, { order: 'first' })).toEqual(['Ana', 'Bruno']);
+  });
+
+  it('caps the list at the given limit', () => {
+    const rows = [
+      header,
+      row('compra_aprovada', 'A A', 'a@x.com'),
+      row('compra_aprovada', 'B B', 'b@x.com'),
+      row('compra_aprovada', 'C C', 'c@x.com'),
+    ];
+    expect(extractApprovedFirstNames(rows, { order: 'first', limit: 2 })).toEqual(['A', 'B']);
+  });
+});
 
 describe('sheets buildRow', () => {
   it('produces all 33 columns in canonical order matching SHEETS_HEADER length', () => {
