@@ -13,6 +13,12 @@ function sendflowError(err: unknown): { error: string; message: string } {
         error: 'rate_limited',
         message: 'Limite de requisições do SendFlow atingido — tente de novo em alguns minutos.',
       };
+    case 'blocked':
+      return {
+        error: 'blocked',
+        message:
+          'A chave da API do SendFlow foi bloqueada por excesso de requisições (rate limit). Aguarde a liberação no SendFlow ou gere uma nova chave e atualize em Configurações.',
+      };
     case 'session_deactivated':
       return {
         error: 'session_deactivated',

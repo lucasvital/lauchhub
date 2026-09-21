@@ -17,6 +17,17 @@ vi.mock('../../src/db/global-config.js', () => ({
 }));
 import { getRawValue } from '../../src/db/global-config.js';
 
+// Keep list-endpoint tests off Redis: the persistent cache/cooldown are no-ops
+// here, so behavior reduces to the in-memory cache + fetch these tests assert.
+vi.mock('../../src/integrations/sendflow/cache.js', () => ({
+  cacheGet: vi.fn(async () => null),
+  cacheSet: vi.fn(async () => undefined),
+  cooldownActive: vi.fn(async () => false),
+  startCooldown: vi.fn(async () => undefined),
+  cooldownMsFor: vi.fn(() => 5 * 60_000),
+  singleFlight: (_key: string, fn: () => Promise<unknown>) => fn(),
+}));
+
 function mockFetch(status: number, body = ''): ReturnType<typeof vi.fn> {
   const fn = vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,

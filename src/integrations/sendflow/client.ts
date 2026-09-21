@@ -1,5 +1,14 @@
 import { getRawValue } from '../../db/global-config.js';
 import { FatalError, TransientError } from '../_shared/errors.js';
+import {
+  cacheGet,
+  cacheSet,
+  cooldownActive,
+  cooldownMsFor,
+  singleFlight,
+  startCooldown,
+  type CachedEntry,
+} from './cache.js';
 
 /**
  * SendFlow REST client — only the endpoint we use: remove participants from
@@ -86,6 +95,9 @@ async function authedGet(
  */
 function classifyListError(status: number, bodyText: string): string {
   const b = bodyText.toLowerCase();
+  // Hard block: "Chave temporariamente bloqueada" (24h). Check first — a block
+  // message may also mention "rate limit".
+  if (b.includes('bloque')) return 'blocked';
   if ((status === 403 && b.includes('limite de opera')) || status === 429) return 'rate_limited';
   if (
     b.includes('sessiondeactivated') ||
@@ -97,6 +109,74 @@ function classifyListError(status: number, bodyText: string): string {
     return 'session_deactivated';
   }
   return `http_${status}`;
+}
+
+/**
+ * Shared cached fetch for SendFlow list endpoints. Order: fresh in-memory →
+ * fresh Redis (survives deploys) → best stale if cooling down → single-flight
+ * live fetch. On a rate-limit/block response it starts a cooldown so we stop
+ * poking the API, and serves the best stale copy it has.
+ */
+async function cachedListFetch<T>(opts: {
+  redisKey: string;
+  ttlMs: number;
+  path: string;
+  memGet: () => CachedEntry<T> | null;
+  memSet: (entry: CachedEntry<T>) => void;
+  parse: (json: unknown) => T[];
+}): Promise<CachedList<T>> {
+  const now = Date.now();
+
+  const mem = opts.memGet();
+  if (mem && now - mem.at < opts.ttlMs) {
+    return { items: mem.items, stale: false, fetchedAt: mem.at };
+  }
+
+  // Redis copy survives deploys — hydrate memory from it when still fresh.
+  const rc = await cacheGet<T>(opts.redisKey);
+  if (rc && now - rc.at < opts.ttlMs) {
+    opts.memSet(rc);
+    return { items: rc.items, stale: false, fetchedAt: rc.at };
+  }
+
+  const staleSource = mem ?? rc; // best stale we can serve
+
+  // Circuit breaker: the key is rate-limited/blocked — serve stale, don't call.
+  if (await cooldownActive()) {
+    if (staleSource) return { items: staleSource.items, stale: true, fetchedAt: staleSource.at };
+    return { items: [], stale: true, fetchedAt: 0 };
+  }
+
+  let resp: Awaited<ReturnType<typeof authedGet>>;
+  try {
+    resp = await singleFlight(opts.redisKey, () => authedGet(opts.path));
+  } catch (err) {
+    if (staleSource) return { items: staleSource.items, stale: true, fetchedAt: staleSource.at };
+    throw err;
+  }
+
+  if (!resp.ok) {
+    const code = classifyListError(resp.status, resp.bodyText);
+    if (code === 'rate_limited' || code === 'blocked') {
+      await startCooldown(cooldownMsFor(resp.bodyText));
+    }
+    if (staleSource) return { items: staleSource.items, stale: true, fetchedAt: staleSource.at };
+    if (resp.status === 404) {
+      const entry = { at: now, items: [] as T[] };
+      opts.memSet(entry);
+      await cacheSet(opts.redisKey, now, entry.items);
+      return { items: [], stale: false, fetchedAt: now };
+    }
+    throw new FatalError(
+      `SendFlow GET ${opts.path} ${resp.status}: ${resp.bodyText.slice(0, 160)}`,
+      code,
+    );
+  }
+
+  const items = opts.parse(resp.json);
+  opts.memSet({ at: now, items });
+  await cacheSet(opts.redisKey, now, items);
+  return { items, stale: false, fetchedAt: now };
 }
 
 // ─── In-memory caches ───────────────────────────────────────────────────────
@@ -115,43 +195,26 @@ const groupsCache = new Map<string, { at: number; items: GroupSummary[] }>();
  * refresh failure with a cache present, the cached list is returned as stale.
  */
 export async function listReleases(): Promise<CachedList<ReleaseSummary>> {
-  const now = Date.now();
-  if (releasesCache && now - releasesCache.at < RELEASES_TTL_MS) {
-    return { items: releasesCache.items, stale: false, fetchedAt: releasesCache.at };
-  }
-
-  let resp: Awaited<ReturnType<typeof authedGet>>;
-  try {
-    resp = await authedGet('/releases');
-  } catch (err) {
-    if (releasesCache) return { items: releasesCache.items, stale: true, fetchedAt: releasesCache.at };
-    throw err;
-  }
-
-  if (!resp.ok) {
-    // Rate limit / transient upstream — serve stale if we have anything.
-    if (releasesCache) return { items: releasesCache.items, stale: true, fetchedAt: releasesCache.at };
-    if (resp.status === 404) {
-      releasesCache = { at: now, items: [] };
-      return { items: [], stale: false, fetchedAt: now };
-    }
-    throw new FatalError(
-      `SendFlow GET /releases ${resp.status}: ${resp.bodyText.slice(0, 160)}`,
-      classifyListError(resp.status, resp.bodyText),
-    );
-  }
-
-  const raw = Array.isArray(resp.json) ? (resp.json as Record<string, unknown>[]) : [];
-  const items: ReleaseSummary[] = raw
-    .filter((r) => !r.archived)
-    .map((r) => ({
-      id: String(r.id ?? ''),
-      name: String(r.name ?? r.id ?? ''),
-      accountIds: Array.isArray(r.accountIds) ? r.accountIds.map(String) : [],
-    }))
-    .filter((r) => r.id);
-  releasesCache = { at: now, items };
-  return { items, stale: false, fetchedAt: now };
+  return cachedListFetch<ReleaseSummary>({
+    redisKey: 'releases',
+    ttlMs: RELEASES_TTL_MS,
+    path: '/releases',
+    memGet: () => releasesCache,
+    memSet: (e) => {
+      releasesCache = e;
+    },
+    parse: (json) => {
+      const raw = Array.isArray(json) ? (json as Record<string, unknown>[]) : [];
+      return raw
+        .filter((r) => !r.archived)
+        .map((r) => ({
+          id: String(r.id ?? ''),
+          name: String(r.name ?? r.id ?? ''),
+          accountIds: Array.isArray(r.accountIds) ? r.accountIds.map(String) : [],
+        }))
+        .filter((r) => r.id);
+    },
+  });
 }
 
 /**
@@ -160,51 +223,32 @@ export async function listReleases(): Promise<CachedList<ReleaseSummary>> {
  * The group `id` is the value used by remove-participants.
  */
 export async function listGroups(releaseId: string): Promise<CachedList<GroupSummary>> {
-  const now = Date.now();
-  const cached = groupsCache.get(releaseId);
-  if (cached && now - cached.at < GROUPS_TTL_MS) {
-    return { items: cached.items, stale: false, fetchedAt: cached.at };
-  }
-
-  let resp: Awaited<ReturnType<typeof authedGet>>;
-  try {
-    resp = await authedGet(`/releases/${encodeURIComponent(releaseId)}/groups`);
-  } catch (err) {
-    if (cached) return { items: cached.items, stale: true, fetchedAt: cached.at };
-    throw err;
-  }
-
-  if (!resp.ok) {
-    if (cached) return { items: cached.items, stale: true, fetchedAt: cached.at };
-    if (resp.status === 404) {
-      groupsCache.set(releaseId, { at: now, items: [] });
-      return { items: [], stale: false, fetchedAt: now };
-    }
-    throw new FatalError(
-      `SendFlow GET /releases/{id}/groups ${resp.status}: ${resp.bodyText.slice(0, 160)}`,
-      classifyListError(resp.status, resp.bodyText),
-    );
-  }
-
-  // Flatten one level: response is `[[ group, group ]]`.
-  const outer = Array.isArray(resp.json) ? (resp.json as unknown[]) : [];
-  const flat: Record<string, unknown>[] = [];
-  for (const el of outer) {
-    if (Array.isArray(el)) flat.push(...(el as Record<string, unknown>[]));
-    else if (el && typeof el === 'object') flat.push(el as Record<string, unknown>);
-  }
-  const items: GroupSummary[] = flat
-    .map((g) => ({
-      id: pickGroupGid(g),
-      name: String(g.name ?? g.id ?? ''),
-      participantsAmount:
-        typeof g.participantsAmount === 'number' ? g.participantsAmount : null,
-      full: g.full === true,
-      docId: String(g.id ?? ''),
-    }))
-    .filter((g) => g.id);
-  groupsCache.set(releaseId, { at: now, items });
-  return { items, stale: false, fetchedAt: now };
+  return cachedListFetch<GroupSummary>({
+    redisKey: `groups:${releaseId}`,
+    ttlMs: GROUPS_TTL_MS,
+    path: `/releases/${encodeURIComponent(releaseId)}/groups`,
+    memGet: () => groupsCache.get(releaseId) ?? null,
+    memSet: (e) => groupsCache.set(releaseId, e),
+    parse: (json) => {
+      // Flatten one level: response is `[[ group, group ]]`.
+      const outer = Array.isArray(json) ? (json as unknown[]) : [];
+      const flat: Record<string, unknown>[] = [];
+      for (const el of outer) {
+        if (Array.isArray(el)) flat.push(...(el as Record<string, unknown>[]));
+        else if (el && typeof el === 'object') flat.push(el as Record<string, unknown>);
+      }
+      return flat
+        .map((g) => ({
+          id: pickGroupGid(g),
+          name: String(g.name ?? g.id ?? ''),
+          participantsAmount:
+            typeof g.participantsAmount === 'number' ? g.participantsAmount : null,
+          full: g.full === true,
+          docId: String(g.id ?? ''),
+        }))
+        .filter((g) => g.id);
+    },
+  });
 }
 
 export interface SendTextInput {
@@ -526,39 +570,26 @@ let templatesCache: { at: number; items: MessageTemplate[] } | null = null;
 
 /** List the user's SendFlow message templates, cached (~90s). Stale on error. */
 export async function listMessageTemplates(): Promise<CachedList<MessageTemplate>> {
-  const now = Date.now();
-  if (templatesCache && now - templatesCache.at < TEMPLATES_TTL_MS) {
-    return { items: templatesCache.items, stale: false, fetchedAt: templatesCache.at };
-  }
-
-  let resp: Awaited<ReturnType<typeof authedGet>>;
-  try {
-    resp = await authedGet('/message-templates');
-  } catch (err) {
-    if (templatesCache) return { items: templatesCache.items, stale: true, fetchedAt: templatesCache.at };
-    throw err;
-  }
-
-  if (!resp.ok) {
-    if (templatesCache) return { items: templatesCache.items, stale: true, fetchedAt: templatesCache.at };
-    if (resp.status === 404) {
-      templatesCache = { at: now, items: [] };
-      return { items: [], stale: false, fetchedAt: now };
-    }
-    throw new FatalError(`SendFlow GET /message-templates ${resp.status}`, `http_${resp.status}`);
-  }
-
-  const raw = Array.isArray(resp.json) ? (resp.json as Record<string, unknown>[]) : [];
-  const items: MessageTemplate[] = raw
-    .filter((t) => !t.archived)
-    .map((t) => ({
-      id: String(t.id ?? ''),
-      title: String(t.title ?? t.id ?? ''),
-      messages: parseTemplateMessages(t.template),
-    }))
-    .filter((t) => t.id);
-  templatesCache = { at: now, items };
-  return { items, stale: false, fetchedAt: now };
+  return cachedListFetch<MessageTemplate>({
+    redisKey: 'templates',
+    ttlMs: TEMPLATES_TTL_MS,
+    path: '/message-templates',
+    memGet: () => templatesCache,
+    memSet: (e) => {
+      templatesCache = e;
+    },
+    parse: (json) => {
+      const raw = Array.isArray(json) ? (json as Record<string, unknown>[]) : [];
+      return raw
+        .filter((t) => !t.archived)
+        .map((t) => ({
+          id: String(t.id ?? ''),
+          title: String(t.title ?? t.id ?? ''),
+          messages: parseTemplateMessages(t.template),
+        }))
+        .filter((t) => t.id);
+    },
+  });
 }
 
 /** Look up a single template by id (uses the cached listing). */
