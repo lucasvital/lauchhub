@@ -59,7 +59,9 @@ export interface CachedList<T> {
   fetchedAt: number;
 }
 
-async function authedGet(path: string): Promise<{ status: number; ok: boolean; json: unknown }> {
+async function authedGet(
+  path: string,
+): Promise<{ status: number; ok: boolean; json: unknown; bodyText: string }> {
   const apiKey = await getRawValue('sendflow_api_key');
   if (!apiKey) {
     throw new FatalError('SendFlow API key not configured — set it in /settings', 'no_credentials');
@@ -68,13 +70,33 @@ async function authedGet(path: string): Promise<{ status: number; ok: boolean; j
     method: 'GET',
     headers: { Authorization: `Bearer ${apiKey}` },
   });
+  const bodyText = await res.text().catch(() => '');
   let json: unknown = null;
   try {
-    json = JSON.parse(await res.text());
+    json = JSON.parse(bodyText);
   } catch {
     /* non-JSON body (error text) — leave null */
   }
-  return { status: res.status, ok: res.ok, json };
+  return { status: res.status, ok: res.ok, json, bodyText };
+}
+
+/**
+ * Classify a failed SendFlow listing response into a stable error code so the
+ * panel can show a useful reason instead of a generic "upstream_error".
+ */
+function classifyListError(status: number, bodyText: string): string {
+  const b = bodyText.toLowerCase();
+  if ((status === 403 && b.includes('limite de opera')) || status === 429) return 'rate_limited';
+  if (
+    b.includes('sessiondeactivated') ||
+    b.includes('session deactivated') ||
+    b.includes('deactivated') ||
+    b.includes('not connected') ||
+    b.includes('desconect')
+  ) {
+    return 'session_deactivated';
+  }
+  return `http_${status}`;
 }
 
 // ─── In-memory caches ───────────────────────────────────────────────────────
@@ -113,7 +135,10 @@ export async function listReleases(): Promise<CachedList<ReleaseSummary>> {
       releasesCache = { at: now, items: [] };
       return { items: [], stale: false, fetchedAt: now };
     }
-    throw new FatalError(`SendFlow GET /releases ${resp.status}`, `http_${resp.status}`);
+    throw new FatalError(
+      `SendFlow GET /releases ${resp.status}: ${resp.bodyText.slice(0, 160)}`,
+      classifyListError(resp.status, resp.bodyText),
+    );
   }
 
   const raw = Array.isArray(resp.json) ? (resp.json as Record<string, unknown>[]) : [];
@@ -155,7 +180,10 @@ export async function listGroups(releaseId: string): Promise<CachedList<GroupSum
       groupsCache.set(releaseId, { at: now, items: [] });
       return { items: [], stale: false, fetchedAt: now };
     }
-    throw new FatalError(`SendFlow GET /releases/{id}/groups ${resp.status}`, `http_${resp.status}`);
+    throw new FatalError(
+      `SendFlow GET /releases/{id}/groups ${resp.status}: ${resp.bodyText.slice(0, 160)}`,
+      classifyListError(resp.status, resp.bodyText),
+    );
   }
 
   // Flatten one level: response is `[[ group, group ]]`.

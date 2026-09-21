@@ -277,6 +277,7 @@ export interface SendflowListResponse<T> {
   stale?: boolean;
   fetched_at?: number;
   error?: string;
+  message?: string;
 }
 
 export interface StatusCheck {

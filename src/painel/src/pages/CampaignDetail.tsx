@@ -2563,6 +2563,18 @@ function SendflowPicker({
             </div>
             {!releaseId ? (
               <p className="text-[10px] text-muted-2">Escolha uma release pra listar os grupos.</p>
+            ) : groupsQ.data?.ok === false ? (
+              <p className="text-[10px] leading-relaxed text-accent-4">
+                {groupsQ.data.message ?? 'Falha ao carregar os grupos.'} Você pode{' '}
+                <button
+                  type="button"
+                  onClick={() => setManual(true)}
+                  className="underline hover:text-accent"
+                >
+                  digitar os GIDs na mão
+                </button>{' '}
+                enquanto isso.
+              </p>
             ) : groups.length === 0 && !groupsQ.isLoading ? (
               <p className="text-[10px] text-muted-2">Nenhum grupo encontrado nesta release.</p>
             ) : (
