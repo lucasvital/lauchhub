@@ -2650,7 +2650,7 @@ function SendflowPicker({
 
         <label className="mt-3 block max-w-md">
           <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
-            Delay pra remover do grupo (minutos)
+            Espaçamento entre mensagens (minutos)
           </span>
           <input
             type="number"
@@ -2665,17 +2665,18 @@ function SendflowPicker({
             placeholder="0"
           />
           <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
-            Posta a mensagem de boas-vindas na hora e agenda a remoção pra{' '}
-            <strong>{removeDelayMinutes || 0} min</strong> depois (via fila). <code>0</code> = remove
-            na hora.
+            Quando várias compras caem juntas, não posta tudo de uma vez: envia a mensagem de um
+            comprador, remove, <strong>espera {removeDelayMinutes || 0} min</strong> e vai pro
+            próximo. <code>0</code> = processa todos assim que chegam.
           </span>
         </label>
       </div>
 
       <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
         Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — no evento, a mensagem é
-        postada no(s) grupo(s) e, depois do delay acima, o comprador é removido. Prefira selecionar
-        os grupos na lista (o id certo é o GID <code>120363…</code>, não o doc id).
+        postada no(s) grupo(s) e o comprador é removido em seguida; o espaçamento acima drena rajadas
+        de vendas uma a uma. Prefira selecionar os grupos na lista (o id certo é o GID{' '}
+        <code>120363…</code>, não o doc id).
         {releasesQ.data?.stale && ' · lista em cache (rate limit da API)'}
       </p>
     </div>

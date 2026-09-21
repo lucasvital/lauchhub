@@ -239,29 +239,61 @@ describe('processSendflowJob — group messages', () => {
     expect(result).toMatchObject({ posted: 0, removed: 1, failed: 1 });
   });
 
-  it('schedules the removal (delayed queue job) instead of removing inline when a delay is set', async () => {
+  it('spaces a burst: re-enqueues with the reserved wait instead of posting now', async () => {
     const remove = vi.fn();
     const sendGroup = vi.fn().mockResolvedValue(undefined);
-    const scheduleRemoval = vi.fn().mockResolvedValue(undefined);
+    const scheduleSpaced = vi.fn().mockResolvedValue(undefined);
+    const reserveSlot = vi.fn().mockResolvedValue(10 * 60_000); // this buyer's slot is 10 min out
     const result = await processSendflowJob(
       makeJob({ accountId: 'acc-9', messages: [{ text: 'oi' }], removeDelayMinutes: 10 }),
-      { remove, sendGroup, scheduleRemoval, sleepMs: 0 },
+      { remove, sendGroup, scheduleSpaced, reserveSlot, sleepMs: 0 },
     );
 
-    expect(sendGroup).toHaveBeenCalledTimes(1); // welcome posted now
-    expect(remove).not.toHaveBeenCalled(); // NOT removed inline
-    expect(scheduleRemoval).toHaveBeenCalledTimes(1);
-    expect(scheduleRemoval.mock.calls[0][1]).toBe(10 * 60_000); // 10 min in ms
-    expect(result).toMatchObject({ posted: 1, removed: 0, scheduled: 1 });
+    expect(reserveSlot).toHaveBeenCalledWith('sendflow:slot:cmp', 10 * 60_000);
+    expect(sendGroup).not.toHaveBeenCalled(); // NOT posted now — waits its slot
+    expect(remove).not.toHaveBeenCalled();
+    expect(scheduleSpaced).toHaveBeenCalledTimes(1);
+    expect(scheduleSpaced.mock.calls[0][0].spacing_scheduled).toBe(true);
+    expect(scheduleSpaced.mock.calls[0][1]).toBe(10 * 60_000);
+    expect(result).toMatchObject({ posted: 0, scheduled: 1 });
   });
 
-  it('processes a delayed "remove" job: removes only, never posts', async () => {
+  it('posts + removes immediately when the reserved slot is free (wait 0)', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    const scheduleSpaced = vi.fn();
+    const reserveSlot = vi.fn().mockResolvedValue(0); // first buyer → slot now
+    const result = await processSendflowJob(
+      makeJob({ accountId: 'acc-9', messages: [{ text: 'oi' }], removeDelayMinutes: 10 }),
+      { remove, sendGroup, scheduleSpaced, reserveSlot, sleepMs: 0 },
+    );
+    expect(scheduleSpaced).not.toHaveBeenCalled();
+    expect(sendGroup).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1); // removed right after the message
+    expect(result).toMatchObject({ posted: 1, removed: 1 });
+  });
+
+  it('a spacing_scheduled job posts immediately without reserving another slot', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    const reserveSlot = vi.fn();
+    const base = makeJob({ accountId: 'acc-9', messages: [{ text: 'oi' }], removeDelayMinutes: 10 });
+    const result = await processSendflowJob(
+      { ...base, spacing_scheduled: true },
+      { remove, sendGroup, reserveSlot, sleepMs: 0 },
+    );
+    expect(reserveSlot).not.toHaveBeenCalled();
+    expect(sendGroup).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ posted: 1, removed: 1 });
+  });
+
+  it('processes a legacy delayed "remove" job: removes only, never posts', async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
     const sendGroup = vi.fn();
-    const scheduleRemoval = vi.fn();
     const result = await processSendflowJob(
       makeJob({ action: 'remove', accountId: 'acc-9', messages: [{ text: 'oi' }] }),
-      { remove, sendGroup, scheduleRemoval, sleepMs: 0 },
+      { remove, sendGroup, sleepMs: 0 },
     );
 
     expect(remove).toHaveBeenCalledWith({
@@ -270,18 +302,17 @@ describe('processSendflowJob — group messages', () => {
       participants: ['5535991891712'],
     });
     expect(sendGroup).not.toHaveBeenCalled();
-    expect(scheduleRemoval).not.toHaveBeenCalled();
     expect(result).toMatchObject({ removed: 1 });
   });
 
-  it('removes inline when delay is 0 (no queue hop)', async () => {
+  it('no spacing (delay 0): posts + removes inline right away', async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
-    const scheduleRemoval = vi.fn();
+    const reserveSlot = vi.fn();
     const result = await processSendflowJob(
       makeJob({ accountId: 'acc-9', messages: [{ text: 'oi' }], removeDelayMinutes: 0 }),
-      { remove, sendGroup: vi.fn().mockResolvedValue(undefined), scheduleRemoval, sleepMs: 0 },
+      { remove, sendGroup: vi.fn().mockResolvedValue(undefined), reserveSlot, sleepMs: 0 },
     );
-    expect(scheduleRemoval).not.toHaveBeenCalled();
+    expect(reserveSlot).not.toHaveBeenCalled(); // no slot reserved when spacing is 0
     expect(remove).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ removed: 1 });
   });
