@@ -4,7 +4,7 @@ import { FatalError } from '../../integrations/_shared/errors.js';
 
 /** Map a SendFlow client error to a stable panel error code + human message. */
 function sendflowError(err: unknown): { error: string; message: string } {
-  const code = err instanceof FatalError ? err.code : 'upstream_error';
+  const code = (err instanceof FatalError ? err.code : 'upstream_error') ?? 'upstream_error';
   switch (code) {
     case 'no_credentials':
       return { error: 'no_api_key', message: 'Chave da API do SendFlow não configurada.' };
@@ -19,8 +19,17 @@ function sendflowError(err: unknown): { error: string; message: string } {
         message:
           'A sessão do WhatsApp está desconectada no SendFlow — reconecte o número por lá e tente de novo.',
       };
-    default:
-      return { error: 'upstream_error', message: 'Falha ao falar com o SendFlow.' };
+    default: {
+      const status = /^http_(\d+)$/.exec(code)?.[1];
+      // FatalError.message is "SendFlow GET ... {status}: {body}" — surface the
+      // body snippet so the operator can see exactly what SendFlow returned.
+      const detail =
+        err instanceof Error ? err.message.split(': ').slice(1).join(': ').trim().slice(0, 140) : '';
+      const base = status
+        ? `O SendFlow respondeu HTTP ${status} ao listar os grupos`
+        : 'Falha ao falar com o SendFlow';
+      return { error: 'upstream_error', message: detail ? `${base} — ${detail}` : `${base}.` };
+    }
   }
 }
 
