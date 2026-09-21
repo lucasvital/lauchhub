@@ -16,22 +16,30 @@ const log = logger.child({ worker: 'sendflow' });
 
 export type SendflowRemoveFn = (input: RemoveParticipantsInput) => Promise<void>;
 export type SendflowGroupSendFn = (input: SendGroupTextInput) => Promise<void>;
-/** Enqueue a delayed "remove" job for the same buyer, `delayMs` from now. */
-export type SendflowScheduleRemovalFn = (job: WebhookJob, delayMs: number) => Promise<void>;
+/** Re-enqueue this job to run `delayMs` from now (its reserved spacing slot). */
+export type SendflowScheduleSpacedFn = (job: WebhookJob, delayMs: number) => Promise<void>;
+/** Reserve the next spacing slot for `key`; returns ms to wait before it. */
+export type SendflowReserveSlotFn = (key: string, spacingMs: number) => Promise<number>;
 
 export interface SendflowDeps {
   remove?: SendflowRemoveFn;
   sendGroup?: SendflowGroupSendFn;
-  scheduleRemoval?: SendflowScheduleRemovalFn;
+  scheduleSpaced?: SendflowScheduleSpacedFn;
+  reserveSlot?: SendflowReserveSlotFn;
   /** Delay between actions and between inline retries (SendFlow rate limits). */
   sleepMs?: number;
 }
 
-/** Default: enqueue a delayed removal job onto the sendflow queue. */
-async function defaultScheduleRemoval(job: WebhookJob, delayMs: number): Promise<void> {
+/** Default: re-enqueue the same (spacing_scheduled) job with a delay. */
+async function defaultScheduleSpaced(job: WebhookJob, delayMs: number): Promise<void> {
   const { queues } = await import('../queue/index.js');
-  const removalJob: WebhookJob = { ...job, sendflow_action: 'remove' };
-  await queues.sendflow.add(`remove:${job.correlation_id}`, removalJob, { delay: delayMs });
+  await queues.sendflow.add(`spaced:${job.correlation_id}`, job, { delay: delayMs });
+}
+
+/** Default: reserve a spacing slot in Redis (atomic across concurrency). */
+async function defaultReserveSlot(key: string, spacingMs: number): Promise<number> {
+  const { reserveSlot } = await import('../queue/index.js');
+  return reserveSlot(key, spacingMs);
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -88,7 +96,8 @@ export async function processSendflowJob(
 ): Promise<SendflowResult> {
   const remove = deps.remove ?? defaultRemove;
   const sendGroup = deps.sendGroup ?? defaultSendGroup;
-  const scheduleRemoval = deps.scheduleRemoval ?? defaultScheduleRemoval;
+  const scheduleSpaced = deps.scheduleSpaced ?? defaultScheduleSpaced;
+  const reserveSlot = deps.reserveSlot ?? defaultReserveSlot;
   const sleepMs = deps.sleepMs ?? 300;
 
   const jobLog = log.child({
@@ -128,10 +137,34 @@ export async function processSendflowJob(
     return { posted: 0, removed: 1, failed: 0 };
   }
 
+  // ─── Spacing (drip) ────────────────────────────────────────────────────────
+  // When several purchases land at once, don't post all welcome messages at the
+  // same second. Reserve the next spacing slot for this campaign: the first
+  // buyer posts now, the others are re-enqueued to fire one per `spacing`, so
+  // the group sees "message → remove" cycles spread out. Only jobs that post
+  // reserve a slot; a job that already went through spacing (spacing_scheduled)
+  // posts immediately.
+  const spacingMs = Math.max(
+    0,
+    Math.round((job.config.sendflow_remove_delay_minutes ?? 0) * 60_000),
+  );
+  if (wantsPost && spacingMs > 0 && !job.spacing_scheduled) {
+    let waitMs = 0;
+    try {
+      waitMs = await reserveSlot(`sendflow:slot:${job.campaign_id}`, spacingMs);
+    } catch (err) {
+      jobLog.warn({ err }, 'sendflow_slot_reserve_failed'); // fail open → post now
+    }
+    if (waitMs > 0) {
+      await scheduleSpaced({ ...job, spacing_scheduled: true }, waitMs);
+      jobLog.info({ wait_ms: waitMs }, 'sendflow_spaced');
+      return { posted: 0, removed: 0, failed: 0, scheduled: 1 };
+    }
+  }
+
   let posted = 0;
   let removed = 0;
   let failed = 0;
-  let scheduled = 0;
 
   // 1) Post the message(s) to the group(s), mentioning the buyer.
   if (wantsPost) {
@@ -192,42 +225,27 @@ export async function processSendflowJob(
     jobLog.info({ account_id: accountId, group_ids: groupIds, posted, failed }, 'sendflow_group_posted');
   }
 
-  // 2) Remove the buyer from the group(s) — after the message, so they see it.
-  //    With a configured delay, the removal is a separate delayed queue job so
-  //    the buyer stays in the group for that long; otherwise remove inline.
+  // 2) Remove the buyer from the group(s) — right after their message. The gap
+  //    before the NEXT buyer's message is the spacing above, so the group sees
+  //    "message → remove", wait, "message → remove".
   if (wantsRemove) {
-    const delayMs = Math.max(0, Math.round((job.config.sendflow_remove_delay_minutes ?? 0) * 60_000));
-    if (delayMs > 0) {
-      try {
-        await scheduleRemoval(job, delayMs);
-        scheduled = 1;
-        jobLog.info(
-          { delay_minutes: job.config.sendflow_remove_delay_minutes },
-          'sendflow_removal_scheduled',
-        );
-      } catch (err) {
-        failed += 1;
-        jobLog.warn({ err }, 'sendflow_removal_schedule_failed');
-      }
+    const ok = await bestEffort(
+      () => remove({ releaseId: releaseId!, groupIds, participants: [phone] }),
+      {
+        tries: 3,
+        sleepMs,
+        onError: (err, attempt) => jobLog.warn({ err, attempt }, 'sendflow_remove_failed'),
+      },
+    );
+    if (ok) {
+      removed = 1;
+      jobLog.info({ release_id: releaseId, group_ids: groupIds }, 'sendflow_removed');
     } else {
-      const ok = await bestEffort(
-        () => remove({ releaseId: releaseId!, groupIds, participants: [phone] }),
-        {
-          tries: 3,
-          sleepMs,
-          onError: (err, attempt) => jobLog.warn({ err, attempt }, 'sendflow_remove_failed'),
-        },
-      );
-      if (ok) {
-        removed = 1;
-        jobLog.info({ release_id: releaseId, group_ids: groupIds }, 'sendflow_removed');
-      } else {
-        failed += 1;
-      }
+      failed += 1;
     }
   }
 
-  return { posted, removed, failed, scheduled };
+  return { posted, removed, failed };
 }
 
 export async function startSendflowWorker(deps: SendflowDeps = {}): Promise<Worker<WebhookJob>> {

@@ -252,9 +252,10 @@ export interface JobConfigSlice {
   // How to dispatch the messages: 'all' posts every one in order (default);
   // 'random' posts a single message picked at random from the list (variations).
   sendflow_send_mode?: SendflowSendMode;
-  // Minutes to wait AFTER posting the welcome message(s) before removing the
-  // buyer from the group. 0 = remove immediately. Enforced via a delayed queue
-  // job so the buyer has time to see the message.
+  // Minutes of SPACING between buyers' welcome messages, so a burst of
+  // simultaneous purchases doesn't flood the group all at once. Each buyer's
+  // "post message → remove" cycle is spaced by this much (drip). 0 = no spacing
+  // (process as they arrive). Enforced via a Redis slot reservation.
   sendflow_remove_delay_minutes?: number;
 }
 
@@ -271,9 +272,15 @@ export interface WebhookJob {
   received_at: string;
   /**
    * SendFlow-only sub-action. Absent/"process" = post welcome message(s) then
-   * schedule removal; "remove" = a delayed job that only removes the buyer.
+   * remove the buyer; "remove" = a legacy delayed job that only removes (kept
+   * for in-flight jobs enqueued before the spacing change).
    */
   sendflow_action?: 'process' | 'remove';
+  /**
+   * SendFlow-only: true once this job has been re-enqueued with its reserved
+   * spacing delay, so it posts immediately instead of reserving another slot.
+   */
+  spacing_scheduled?: boolean;
 }
 
 export const WORKER_IDS: readonly WorkerId[] = [
