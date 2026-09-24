@@ -8,6 +8,7 @@ export type WebhookOutcome =
   | 'unrecognized_event'
   | 'no_contact'
   | 'skipped_other_offer'
+  | 'skipped_other_funnel'
   | 'error';
 
 export interface WebhookEventRow {
