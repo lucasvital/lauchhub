@@ -136,7 +136,7 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
               got: term || null,
             });
             record({
-              outcome: 'skipped_other_offer',
+              outcome: 'skipped_other_funnel',
               event: eventId,
               campaign_id: campaign.id,
               campaign_token: campaign.campaign_token,
