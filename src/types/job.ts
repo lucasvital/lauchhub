@@ -15,7 +15,9 @@ export type EventId =
   | 'compra_recusada'
   | 'compra_reembolsada'
   | 'subscription_canceled'
-  | 'subscription_renewed';
+  | 'subscription_renewed'
+  /** Tally form submission (not a Kiwify sale) — Mautic-only via /webhook/tally. */
+  | 'tally_form';
 
 export interface ContactInfo {
   name: string;

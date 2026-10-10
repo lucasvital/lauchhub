@@ -57,6 +57,10 @@ export interface CampaignRow {
   sendflow_remove_delay_minutes: number;
   /** Recurring scheduled group broadcasts (message + optional video). */
   sendflow_broadcasts: SendflowBroadcast[];
+  /** Tally form integration: when enabled, form responses tag/segment in Mautic. */
+  tally_enabled: boolean;
+  /** Mautic ops (tags/segments) applied to whoever submits the Tally form. */
+  tally_mautic: MauticEventConfig | null;
   active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -89,6 +93,8 @@ export interface CampaignCreateInput {
   sendflow_messages?: Partial<Record<EventId, SendflowEventConfig>>;
   sendflow_remove_delay_minutes?: number;
   sendflow_broadcasts?: SendflowBroadcast[];
+  tally_enabled?: boolean;
+  tally_mautic?: MauticEventConfig | null;
   active?: boolean;
 }
 
@@ -118,6 +124,8 @@ export interface CampaignUpdateInput {
   sendflow_messages?: Partial<Record<EventId, SendflowEventConfig>>;
   sendflow_remove_delay_minutes?: number;
   sendflow_broadcasts?: SendflowBroadcast[];
+  tally_enabled?: boolean;
+  tally_mautic?: MauticEventConfig | null;
 }
 
 const ALL_COLS = `
@@ -129,6 +137,7 @@ const ALL_COLS = `
   enabled_workers, match_by_product, checkout_links, utm_term_match, coupon, checkout_utm,
   sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
   sendflow_remove_delay_minutes, sendflow_broadcasts,
+  tally_enabled, tally_mautic,
   active, created_at, updated_at
 `;
 
@@ -191,14 +200,14 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         enabled_workers, match_by_product, checkout_links, coupon,
         sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
         sendflow_broadcasts, sheets_acquisition, sendflow_remove_delay_minutes,
-        utm_term_match, checkout_utm, active)
+        utm_term_match, checkout_utm, active, tally_enabled, tally_mautic)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
              $14::jsonb,$15,$16::jsonb,$17,
-             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25,$26,$27)
+             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25,$26,$27,$28,$29::jsonb)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -228,6 +237,8 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       input.utm_term_match ?? null,
       input.checkout_utm ?? null,
       input.active ?? true,
+      input.tally_enabled ?? false,
+      input.tally_mautic ? JSON.stringify(input.tally_mautic) : null,
     ],
   );
   const row = r.rows[0];
@@ -270,6 +281,8 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.sendflow_remove_delay_minutes !== undefined)
     setField('sendflow_remove_delay_minutes', patch.sendflow_remove_delay_minutes);
   if (patch.sendflow_broadcasts !== undefined) setField('sendflow_broadcasts', patch.sendflow_broadcasts, true);
+  if (patch.tally_enabled !== undefined) setField('tally_enabled', patch.tally_enabled);
+  if (patch.tally_mautic !== undefined) setField('tally_mautic', patch.tally_mautic, true);
 
   if (fields.length === 0) {
     return findById(id);

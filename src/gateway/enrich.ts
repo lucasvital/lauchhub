@@ -142,3 +142,53 @@ export async function assembleJobs(
   }
   return results;
 }
+
+/**
+ * Build the single Mautic job for a Tally form submission. Bypasses the
+ * event/enabled_workers system (Tally is Mautic-only): the respondent is
+ * upserted and gets the campaign's `tally_mautic` tags/segments. Returns null
+ * if the campaign has no Mautic instance (nothing to do).
+ */
+export async function buildTallyMauticJob(
+  campaign: CampaignRow,
+  contact: WebhookJob['contact'],
+  utm: WebhookJob['utm'],
+): Promise<WebhookJob | null> {
+  const creds = await resolveMauticCreds(campaign);
+  if (!creds.url || !creds.username || !creds.password) return null;
+
+  const order: WebhookJob['order'] = {
+    id: '',
+    ref: null,
+    status: 'tally_form',
+    payment_method: null,
+    value: null,
+    product_id: null,
+    product_name: campaign.product_name ?? null,
+    currency: null,
+    product_base_price: null,
+    product_base_price_currency: null,
+    my_commission: null,
+    is_order_bump: false,
+    payment_merchant_id: null,
+    checkout_link: null,
+  };
+
+  return {
+    correlation_id: randomUUID(),
+    campaign_id: campaign.id,
+    campaign_token: campaign.campaign_token,
+    event: 'tally_form',
+    worker: 'mautic',
+    contact,
+    order,
+    utm,
+    config: {
+      mautic_url: creds.url,
+      mautic_username: creds.username,
+      mautic_password: creds.password,
+      mautic_event: campaign.tally_mautic ?? null,
+    },
+    received_at: new Date().toISOString(),
+  };
+}

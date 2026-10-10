@@ -153,6 +153,8 @@ export interface Campaign {
   sendflow_messages: Partial<Record<EventId, SendflowEventConfig>>;
   sendflow_remove_delay_minutes: number;
   sendflow_broadcasts: SendflowBroadcast[];
+  tally_enabled: boolean;
+  tally_mautic: MauticEventConfig | null;
   active: boolean;
   created_at: string;
   updated_at: string;

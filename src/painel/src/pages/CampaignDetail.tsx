@@ -128,6 +128,7 @@ export function CampaignDetailPage() {
   const qc = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [copiedTmb, setCopiedTmb] = useState(false);
+  const [copiedTally, setCopiedTally] = useState(false);
 
   const q = useQuery({
     queryKey: ['campaigns', id],
@@ -182,6 +183,7 @@ export function CampaignDetailPage() {
   const webhookUrl = `${location.origin.replace('://launchhub', '://launches')}/webhook/${c.campaign_token}`;
   const apiUrl = `${import.meta.env.VITE_API_BASE_URL ?? location.origin}/webhook/${c.campaign_token}`;
   const tmbUrl = `${import.meta.env.VITE_API_BASE_URL ?? location.origin}/webhook/tmb/${c.campaign_token}`;
+  const tallyUrl = `${import.meta.env.VITE_API_BASE_URL ?? location.origin}/webhook/tally/${c.campaign_token}`;
 
   async function copyText(text: string, mark: (v: boolean) => void) {
     try {
@@ -194,6 +196,7 @@ export function CampaignDetailPage() {
   }
   const copyWebhook = () => copyText(apiUrl, setCopied);
   const copyTmb = () => copyText(tmbUrl, setCopiedTmb);
+  const copyTally = () => copyText(tallyUrl, setCopiedTally);
 
   function toggleWorker(event: EventId, worker: WorkerId) {
     const currentSet = new Set(c.enabled_workers[event] ?? []);
@@ -263,6 +266,27 @@ export function CampaignDetailPage() {
           Cole a URL da TMB no cadastro do produto → Integrações → Webhook Vendas. Só o evento{' '}
           <strong>Efetivado</strong> é processado (vira Compra Aprovada); Cancelado é ignorado.
         </p>
+        {c.tally_enabled && (
+          <>
+            <div className="mb-1.5 mt-3 text-[10px] uppercase tracking-[0.08em] text-muted-2">
+              Tally — respostas do formulário
+            </div>
+            <div className="flex items-center gap-2.5 overflow-x-auto rounded border border-dashed border-border-2 bg-dim px-3 py-2.5 font-mono text-[11px]">
+              <span className="text-[11px] uppercase tracking-[0.08em] text-muted">POST</span>
+              <code className="whitespace-nowrap text-accent-2">{tallyUrl}</code>
+              <button
+                onClick={copyTally}
+                className="ml-auto rounded-sm border border-border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted transition-colors hover:border-accent hover:text-accent"
+              >
+                {copiedTally ? '✓ copiado' : 'copiar'}
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
+              No Tally: form → Integrations → Webhooks → cole essa URL. Quem responder é marcado no
+              Mautic com as tags/segmentos configurados no bloco "Tally → Mautic" abaixo.
+            </p>
+          </>
+        )}
       </Card>
 
       <Card className="mb-6">
@@ -532,6 +556,14 @@ export function CampaignDetailPage() {
         saving={patchCampaign.isPending}
       />
 
+      <TallyEditor
+        mauticInstanceId={c.mautic_instance_id}
+        enabled={c.tally_enabled}
+        config={c.tally_mautic}
+        onToggle={(v) => patchCampaign.mutate({ tally_enabled: v })}
+        onSave={(next) => patchCampaign.mutate({ tally_mautic: next })}
+      />
+
       <MetaTemplatesEditor
         chatwootInstanceId={c.chatwoot_instance_id}
         chatwootInboxId={c.chatwoot_inbox_id}
@@ -788,8 +820,84 @@ function MauticEventEditor({
   );
 }
 
-// ─── Mautic discovery pickers ────────────────────────────────────────────────
+function TallyEditor({
+  mauticInstanceId,
+  enabled,
+  config,
+  onToggle,
+  onSave,
+}: {
+  mauticInstanceId: string | null;
+  enabled: boolean;
+  config: MauticEventConfig | null;
+  onToggle: (v: boolean) => void;
+  onSave: (next: MauticEventConfig) => void;
+}) {
+  const cfg = { ...emptyMauticEventConfig(), ...(config ?? {}) };
+  const update = <K extends keyof MauticEventConfig>(field: K, value: MauticEventConfig[K]): void => {
+    onSave({ ...cfg, [field]: value });
+  };
 
+  return (
+    <Card accent="purple" className="mt-6">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3>// Tally → Mautic</h3>
+          <p className="mt-1.5 max-w-2xl text-[11px] text-muted">
+            Quando ligado, quem responde o formulário do Tally é criado/atualizado no Mautic (busca
+            por e-mail) e recebe a tag e o segmento escolhidos aqui. Usa a mesma instância Mautic da
+            campanha. A URL do webhook aparece no bloco <strong>Webhook URL</strong> (topo) quando
+            ligado — cole ela no Tally em Integrations → Webhooks.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={() => onToggle(!enabled)}
+          className={`relative mt-1 h-[18px] w-8 shrink-0 rounded-[10px] border transition-colors ${
+            enabled ? 'border-accent bg-accent/15' : 'border-border bg-surface'
+          }`}
+          title={enabled ? 'ligado' : 'desligado'}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full transition-transform ${
+              enabled ? 'bg-accent translate-x-3.5' : 'bg-muted'
+            }`}
+          />
+        </button>
+      </div>
+
+      {enabled && !mauticInstanceId && (
+        <Callout kind="warn">
+          Selecione uma instância Mautic no bloco "Integrações desta campanha" acima — o Tally grava
+          nela.
+        </Callout>
+      )}
+
+      {enabled && (
+        <div className="space-y-4">
+          <MauticTagPicker
+            mauticInstanceId={mauticInstanceId}
+            label="Tags — adicionar"
+            hint="Aplicadas a quem responde o formulário"
+            values={cfg.tags_add}
+            onChange={(v) => update('tags_add', v)}
+          />
+          <MauticSegmentPicker
+            mauticInstanceId={mauticInstanceId}
+            label="Segmento — adicionar a"
+            hint="Onde o respondente entra no Mautic"
+            values={cfg.segments_add}
+            onChange={(v) => update('segments_add', v)}
+          />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Mautic discovery pickers ────────────────────────────────────────────────
 function useMauticTags(mauticInstanceId: string | null) {
   return useQuery({
     queryKey: ['mautic-discovery', mauticInstanceId, 'tags'],
