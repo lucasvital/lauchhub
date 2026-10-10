@@ -5,6 +5,7 @@ import { ping as pingDb, close as closeDb } from '../db/index.js';
 import { ping as pingRedis, close as closeQueue } from '../queue/index.js';
 import { registerWebhookRoute } from './routes/webhook.js';
 import { registerTmbWebhookRoute } from './routes/tmb-webhook.js';
+import { registerTallyWebhookRoute } from './routes/tally-webhook.js';
 import { registerAuth } from './auth.js';
 import { registerCampaignsRoutes } from './routes/campaigns.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -61,6 +62,7 @@ export async function buildServer() {
   await registerAuth(app);
   await registerWebhookRoute(app);
   await registerTmbWebhookRoute(app);
+  await registerTallyWebhookRoute(app);
   await registerCampaignsRoutes(app);
   await registerDashboardRoutes(app);
   await registerSettingsRoutes(app);
