@@ -14,6 +14,8 @@ export interface TallyField {
   label?: string;
   type?: string;
   value?: unknown;
+  /** For choice fields, maps option id → text (value holds option ids). */
+  options?: { id?: string; text?: string }[];
 }
 
 export interface TallyPayload {
@@ -33,7 +35,19 @@ function fieldValue(f: TallyField): string {
   if (v == null) return '';
   if (typeof v === 'string') return v.trim();
   if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  if (Array.isArray(v)) return v.map((x) => String(x)).filter(Boolean).join(', ').trim();
+  if (Array.isArray(v)) {
+    // Choice fields (MULTIPLE_CHOICE / MULTI_SELECT): value is an array of
+    // option ids — resolve each to its option text when available.
+    const opts = Array.isArray(f.options) ? f.options : [];
+    return v
+      .map((x) => {
+        const id = String(x);
+        return opts.find((o) => o?.id === id)?.text ?? id;
+      })
+      .filter(Boolean)
+      .join(', ')
+      .trim();
+  }
   return String(v).trim();
 }
 
