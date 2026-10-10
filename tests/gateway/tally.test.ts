@@ -45,6 +45,33 @@ describe('mapTallyContact', () => {
     ]);
     expect(mapTallyContact(p).email).toBe('a@b.com');
   });
+
+  it('resolves choice option ids to their text', () => {
+    const p = payload([
+      {
+        label: 'nome',
+        type: 'MULTIPLE_CHOICE',
+        value: ['2beea7f4'],
+        options: [
+          { id: '2beea7f4', text: 'Masculino' },
+          { id: '51232be5', text: 'Feminino' },
+        ],
+      },
+    ]);
+    // the value is an option id and must resolve to the option text, not the raw id
+    expect(mapTallyContact(p).name).toBe('Masculino');
+  });
+
+  it('returns no email when the hidden contact fields are null (real Tally lead form)', () => {
+    const p = payload([
+      { key: 'q1', label: 'Qual é seu sexo?', type: 'MULTIPLE_CHOICE', value: ['id1'], options: [{ id: 'id1', text: 'M' }] },
+      { key: 'h_nome', label: 'nome', type: 'HIDDEN_FIELDS', value: null },
+      { key: 'h_email', label: 'email', type: 'HIDDEN_FIELDS', value: null },
+      { key: 'h_tel', label: 'telefone', type: 'HIDDEN_FIELDS', value: null },
+    ]);
+    expect(mapTallyContact(p).email).toBeNull();
+    expect(tallyHasEmail(p)).toBe(false);
+  });
 });
 
 describe('tallyHasEmail', () => {
