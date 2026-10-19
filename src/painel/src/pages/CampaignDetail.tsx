@@ -891,6 +891,20 @@ function TallyEditor({
             values={cfg.segments_add}
             onChange={(v) => update('segments_add', v)}
           />
+          <MauticSegmentPicker
+            mauticInstanceId={mauticInstanceId}
+            label="Segmento — remover de"
+            hint="De onde o respondente sai (limpar estados antigos: lead frio, lista anterior, etc.)"
+            values={cfg.segments_remove}
+            onChange={(v) => update('segments_remove', v)}
+          />
+          <MauticTagPicker
+            mauticInstanceId={mauticInstanceId}
+            label="Tags — remover"
+            hint="Tags a tirar de quem responde (prefixo -tag é aplicado automaticamente)"
+            values={cfg.tags_remove}
+            onChange={(v) => update('tags_remove', v)}
+          />
         </div>
       )}
     </Card>
