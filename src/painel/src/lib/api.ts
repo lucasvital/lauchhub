@@ -247,6 +247,7 @@ export interface CouponLadder {
   announce_every: number;
   tiers: BfTier[];
   switchy_links: { domain: string; slug: string }[];
+  announce_targets: { releaseId: string; accountId: string; groupIds: string[] }[];
   total_sold: number;
   tier_index: number;
   last_announce: number;
