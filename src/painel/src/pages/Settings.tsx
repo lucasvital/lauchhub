@@ -28,6 +28,7 @@ export function SettingsPage() {
   const [revealed, setRevealed] = useState(false);
   const [sendflowRevealed, setSendflowRevealed] = useState(false);
   const [switchyRevealed, setSwitchyRevealed] = useState(false);
+  const [switchyTestLink, setSwitchyTestLink] = useState('');
   const [testStatus, setTestStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,6 +51,18 @@ export function SettingsPage() {
   const test = useMutation({
     mutationFn: () =>
       api.post<{ ok: boolean; error?: string | null }>('/api/settings/test/sheets'),
+  });
+
+  const switchyTest = useMutation({
+    mutationFn: (link: string) =>
+      api.post<{
+        ok: boolean;
+        url?: string;
+        coupon?: string | null;
+        title?: string | null;
+        error?: string;
+        message?: string;
+      }>('/api/switchy/test', { link }),
   });
 
   async function onSave() {
@@ -234,6 +247,52 @@ export function SettingsPage() {
                 )}
               </div>
             </label>
+          </div>
+          <div className="mt-4">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Testar leitura de um link
+            </span>
+            <div className="flex gap-2">
+              <input
+                value={switchyTestLink}
+                onChange={(e) => setSwitchyTestLink(e.target.value)}
+                placeholder="ex: hi.switchy.io/meulink"
+              />
+              <button
+                type="button"
+                onClick={() => switchyTest.mutate(switchyTestLink.trim())}
+                disabled={switchyTest.isPending || !switchyTestLink.trim()}
+                className="shrink-0 rounded-sm border border-border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted hover:border-accent hover:text-accent disabled:opacity-40"
+              >
+                {switchyTest.isPending ? 'testando…' : 'testar'}
+              </button>
+            </div>
+            {switchyTest.isError && (
+              <div className="mt-2 rounded-sm border border-accent-5/30 bg-accent-5/5 px-3 py-2 text-[11px] text-accent-5">
+                ✕ erro de rede ao chamar o diagnóstico
+              </div>
+            )}
+            {switchyTest.data &&
+              (switchyTest.data.ok ? (
+                <div className="mt-2 rounded-sm border border-accent-3/30 bg-accent-3/5 px-3 py-2 text-[11px]">
+                  <div className="font-semibold text-accent-3">✓ link lido com sucesso</div>
+                  <div className="mt-1 break-all text-muted">
+                    destino: <code className="text-text">{switchyTest.data.url}</code>
+                  </div>
+                  <div className="text-muted">
+                    coupon atual:{' '}
+                    <code className="text-accent-2">{switchyTest.data.coupon ?? '(nenhum)'}</code>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 rounded-sm border border-accent-5/30 bg-accent-5/5 px-3 py-2 text-[11px] text-accent-5">
+                  ✕ {switchyTest.data.message ?? switchyTest.data.error ?? 'falhou'}
+                </div>
+              ))}
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+              Só leitura — não altera nada. Confirma o token e a leitura antes de ligar a escada de
+              cupons.
+            </span>
           </div>
         </Card>
 
