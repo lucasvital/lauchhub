@@ -58,6 +58,11 @@ export interface KiwifyPayload {
     utm_content?: string | null;
     utm_term?: string | null;
   };
+  /** Sent ONLY when the sale used a coupon. */
+  Discount?: {
+    coupon_code?: string | null;
+    discount_percentage?: number | null;
+  };
 }
 
 function toNumber(v: unknown): number | null {

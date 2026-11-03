@@ -14,6 +14,7 @@ import { registerBullBoard } from './bull-board.js';
 import { registerLogsRoutes } from './routes/logs.js';
 import { registerInstancesRoutes } from './routes/instances.js';
 import { registerSendflowRoutes } from './routes/sendflow.js';
+import { registerSwitchyRoutes } from './routes/switchy.js';
 import { registerStatusRoutes } from './routes/status.js';
 
 const APP_VERSION = '0.1.0';
@@ -69,6 +70,7 @@ export async function buildServer() {
   await registerLogsRoutes(app);
   await registerInstancesRoutes(app);
   await registerSendflowRoutes(app);
+  await registerSwitchyRoutes(app);
   await registerStatusRoutes(app);
   // Bull Board needs real BullMQ Queue instances. Skip in tests (queues are mocked).
   if (config.NODE_ENV !== 'test') {

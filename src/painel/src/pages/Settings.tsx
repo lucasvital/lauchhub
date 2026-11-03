@@ -27,6 +27,7 @@ export function SettingsPage() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState(false);
   const [sendflowRevealed, setSendflowRevealed] = useState(false);
+  const [switchyRevealed, setSwitchyRevealed] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export function SettingsPage() {
         google_service_account_email: q.data.settings.google_service_account_email ?? '',
         google_service_account_json: q.data.settings.google_service_account_json ?? '',
         sendflow_api_key: q.data.settings.sendflow_api_key ?? '',
+        switchy_api_key: q.data.settings.switchy_api_key ?? '',
       });
     }
   }, [q.data]);
@@ -71,6 +73,7 @@ export function SettingsPage() {
 
   const jsonMasked = isMasked(draft.google_service_account_json);
   const sendflowKeyMasked = isMasked(draft.sendflow_api_key);
+  const switchyKeyMasked = isMasked(draft.switchy_api_key);
 
   return (
     <div>
@@ -187,6 +190,42 @@ export function SettingsPage() {
                     onClick={() => {
                       setDraft((d) => ({ ...d, sendflow_api_key: '' }));
                       setSendflowRevealed(true);
+                    }}
+                    className="absolute right-2 top-2 rounded-sm border border-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted hover:text-text"
+                  >
+                    TROCAR
+                  </button>
+                )}
+              </div>
+            </label>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="mb-3">// Switchy</h3>
+          <p className="text-[11px] text-muted">
+            Token da API do Switchy (por workspace) — usado pela escada de cupons da Black Friday pra
+            atualizar os links quando o cupom regride. Gere em Switchy → workspace → Settings →
+            Integrations → Generate a token.
+          </p>
+          <div className="mt-4">
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                API Key (Api-Authorization)
+              </span>
+              <div className="relative">
+                <input
+                  type={switchyKeyMasked && !switchyRevealed ? 'text' : 'password'}
+                  value={draft.switchy_api_key ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, switchy_api_key: e.target.value }))}
+                  placeholder="token do workspace Switchy"
+                />
+                {switchyKeyMasked && !switchyRevealed && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft((d) => ({ ...d, switchy_api_key: '' }));
+                      setSwitchyRevealed(true);
                     }}
                     className="absolute right-2 top-2 rounded-sm border border-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted hover:text-text"
                   >
