@@ -137,6 +137,11 @@ describe('swapCouponInUrl', () => {
     expect(swapCouponInUrl('x?coupon=CPDF100', 'CPDF10', 'CPDF9')).toBe('x?coupon=CPDF100'); // no partial match
     expect(swapCouponInUrl('x?coupon=OTHER', 'CPDF10', 'CPDF9')).toBe('x?coupon=OTHER');
   });
+  it('also swaps the Portuguese `cupom=` param (landing pages)', () => {
+    expect(
+      swapCouponInUrl('https://lps.danilogato.com.br/bf/?cupom=CPDF10&utm_source=whatsapp', 'CPDF10', 'CPDF9'),
+    ).toBe('https://lps.danilogato.com.br/bf/?cupom=CPDF9&utm_source=whatsapp');
+  });
 });
 
 describe('setCouponInUrl', () => {
@@ -146,5 +151,10 @@ describe('setCouponInUrl', () => {
   });
   it('leaves a URL without a coupon param untouched', () => {
     expect(setCouponInUrl('https://x.com/abc?a=1', 'CPDF8')).toBe('https://x.com/abc?a=1');
+  });
+  it('forces the `cupom=` param too (landing-page links)', () => {
+    expect(setCouponInUrl('https://lps.x.com/bf/?cupom=CPDF10&utm_medium=grupo', 'CPDF9')).toBe(
+      'https://lps.x.com/bf/?cupom=CPDF9&utm_medium=grupo',
+    );
   });
 });

@@ -169,24 +169,28 @@ export function extractKiwifyCoupon(payload: unknown): string | null {
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// The coupon query param is spelled `coupon` (Kiwify checkout) OR `cupom`
+// (Portuguese landing pages). Both are swapped so a shared LP link rotates too.
+const COUPON_PARAM = '(?:coupon|cupom)';
+
 /**
- * Replace the value of a `coupon` query param equal to `from` with `to`,
+ * Replace the value of a `coupon`/`cupom` query param equal to `from` with `to`,
  * touching nothing else in the URL (minimal edit — the rest of the destination
  * is preserved byte-for-byte). Returns the URL unchanged if `from` isn't the
  * current coupon. Case-insensitive on the coupon code.
  */
 export function swapCouponInUrl(url: string, from: string, to: string): string {
   if (!from) return url;
-  const re = new RegExp(`([?&]coupon=)${escapeRegExp(from)}(?=&|#|$)`, 'gi');
+  const re = new RegExp(`([?&]${COUPON_PARAM}=)${escapeRegExp(from)}(?=&|#|$)`, 'gi');
   return url.replace(re, `$1${to}`);
 }
 
 /**
- * Set the `coupon` query param to `to` regardless of its current value — used
- * on the campaign's dedicated ladder links so a multi-step jump (e.g. a date
- * skip from CPDF10 straight to CPDF8) still lands on the right coupon. Leaves a
- * URL without a `coupon` param untouched.
+ * Set the `coupon`/`cupom` query param to `to` regardless of its current value
+ * — used on the campaign's dedicated ladder links so a multi-step jump (e.g. a
+ * date skip from CPDF10 straight to CPDF8) still lands on the right coupon.
+ * Leaves a URL without a coupon param untouched.
  */
 export function setCouponInUrl(url: string, to: string): string {
-  return url.replace(/([?&]coupon=)[^&#]*/gi, `$1${to}`);
+  return url.replace(new RegExp(`([?&]${COUPON_PARAM}=)[^&#]*`, 'gi'), `$1${to}`);
 }

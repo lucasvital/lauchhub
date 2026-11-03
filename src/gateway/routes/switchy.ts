@@ -22,7 +22,7 @@ export async function registerSwitchyRoutes(app: FastifyInstance): Promise<void>
         if (!link) {
           return reply.code(200).send({ ok: false, error: 'not_found', message: 'Link não encontrado nesse workspace.' });
         }
-        const coupon = /[?&]coupon=([^&#]*)/i.exec(link.url)?.[1] ?? null;
+        const coupon = /[?&](?:coupon|cupom)=([^&#]*)/i.exec(link.url)?.[1] ?? null;
         return { ok: true, ref, url: link.url, coupon, title: link.title ?? null };
       } catch (err) {
         const code = err instanceof FatalError ? err.code : 'error';
