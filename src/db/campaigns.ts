@@ -61,6 +61,8 @@ export interface CampaignRow {
   tally_enabled: boolean;
   /** Mautic ops (tags/segments) applied to whoever submits the Tally form. */
   tally_mautic: MauticEventConfig | null;
+  /** Black Friday coupon ladder this campaign feeds (FK → coupon_ladders). */
+  coupon_ladder_id: string | null;
   active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -95,6 +97,7 @@ export interface CampaignCreateInput {
   sendflow_broadcasts?: SendflowBroadcast[];
   tally_enabled?: boolean;
   tally_mautic?: MauticEventConfig | null;
+  coupon_ladder_id?: string | null;
   active?: boolean;
 }
 
@@ -126,6 +129,7 @@ export interface CampaignUpdateInput {
   sendflow_broadcasts?: SendflowBroadcast[];
   tally_enabled?: boolean;
   tally_mautic?: MauticEventConfig | null;
+  coupon_ladder_id?: string | null;
 }
 
 const ALL_COLS = `
@@ -138,6 +142,7 @@ const ALL_COLS = `
   sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
   sendflow_remove_delay_minutes, sendflow_broadcasts,
   tally_enabled, tally_mautic,
+  coupon_ladder_id,
   active, created_at, updated_at
 `;
 
@@ -200,14 +205,14 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         enabled_workers, match_by_product, checkout_links, coupon,
         sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
         sendflow_broadcasts, sheets_acquisition, sendflow_remove_delay_minutes,
-        utm_term_match, checkout_utm, active, tally_enabled, tally_mautic)
+        utm_term_match, checkout_utm, active, tally_enabled, tally_mautic, coupon_ladder_id)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
              $14::jsonb,$15,$16::jsonb,$17,
-             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25,$26,$27,$28,$29::jsonb)
+             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25,$26,$27,$28,$29::jsonb,$30)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -239,6 +244,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       input.active ?? true,
       input.tally_enabled ?? false,
       input.tally_mautic ? JSON.stringify(input.tally_mautic) : null,
+      input.coupon_ladder_id ?? null,
     ],
   );
   const row = r.rows[0];
@@ -283,6 +289,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.sendflow_broadcasts !== undefined) setField('sendflow_broadcasts', patch.sendflow_broadcasts, true);
   if (patch.tally_enabled !== undefined) setField('tally_enabled', patch.tally_enabled);
   if (patch.tally_mautic !== undefined) setField('tally_mautic', patch.tally_mautic, true);
+  if (patch.coupon_ladder_id !== undefined) setField('coupon_ladder_id', patch.coupon_ladder_id);
 
   if (fields.length === 0) {
     return findById(id);
