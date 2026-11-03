@@ -155,6 +155,7 @@ export interface Campaign {
   sendflow_broadcasts: SendflowBroadcast[];
   tally_enabled: boolean;
   tally_mautic: MauticEventConfig | null;
+  coupon_ladder_id: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -230,6 +231,25 @@ export interface SendflowEventConfig {
   /** 'all' = post every message in order (default); 'random' = post ONE random
    *  message from the list (variations). */
   send_mode?: SendflowSendMode;
+}
+
+export interface BfTier {
+  coupon: string;
+  quota: number;
+  until?: string | null;
+  label?: string;
+}
+
+export interface CouponLadder {
+  id: string;
+  name: string;
+  enabled: boolean;
+  announce_every: number;
+  tiers: BfTier[];
+  switchy_links: { domain: string; slug: string }[];
+  total_sold: number;
+  tier_index: number;
+  last_announce: number;
 }
 
 export type SendflowBroadcastKind = 'template' | 'names';

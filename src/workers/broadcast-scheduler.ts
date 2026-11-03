@@ -11,6 +11,7 @@ import { listApprovedFirstNames } from '../integrations/sheets/client.js';
 import { buildCheckoutLinks } from '../shared/checkout.js';
 import { saoPauloDateTime } from '../shared/datetime.js';
 import { logger } from '../shared/logger.js';
+import { advanceLaddersByDate } from './bf-ladder.js';
 import type { SendflowBroadcast } from '../types/job.js';
 
 const log = logger.child({ component: 'broadcast-scheduler' });
@@ -320,6 +321,7 @@ export function startBroadcastScheduler(): void {
   if (timer) return;
   const run = (): void => {
     void runBroadcastTick().catch((err) => log.error({ err }, 'broadcast_tick_error'));
+    void advanceLaddersByDate().catch((err) => log.error({ err }, 'ladder_date_tick_error'));
   };
   timer = setInterval(run, 30_000);
   run();

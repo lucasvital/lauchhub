@@ -5,6 +5,8 @@ import * as webhookEventsDb from '../../db/webhook-events.js';
 import { queues } from '../../queue/index.js';
 import { detectEvent, extractUtm, type KiwifyPayload } from '../event-detection.js';
 import { buildJobs } from '../enrich.js';
+import { extractKiwifyCoupon } from '../../shared/coupon-ladder.js';
+import { onCouponSale } from '../../workers/bf-ladder.js';
 
 /**
  * POST /webhook/:token
@@ -156,6 +158,17 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
         }
 
         const jobs = await buildJobs(payload, campaign, eventId);
+
+        // Black Friday coupon ladder: a purchase that used a ladder coupon
+        // steps the discount down. Fire-and-forget — never blocks the 200.
+        if (eventId === 'compra_aprovada' && campaign.coupon_ladder_id) {
+          const coupon = extractKiwifyCoupon(payload);
+          if (coupon) {
+            void onCouponSale(campaign.coupon_ladder_id, coupon).catch((err) =>
+              log.error({ event: 'bf_ladder_error', err: String(err) }),
+            );
+          }
+        }
 
         if (jobs.length === 0) {
           log.info({ event: 'no_workers_enabled', event_id: eventId });

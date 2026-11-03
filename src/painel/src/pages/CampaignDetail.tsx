@@ -18,6 +18,8 @@ import {
   type SendflowBroadcast,
   type SendflowNamesOrder,
   type SendflowEventConfig,
+  type CouponLadder,
+  type BfTier,
   type SendflowGroupOption,
   type SendflowListResponse,
   type SendflowReleaseOption,
@@ -592,6 +594,11 @@ export function CampaignDetailPage() {
           c.sendflow_release_id && c.sendflow_account_id && (c.sendflow_group_ids ?? []).length > 0,
         )}
         onSave={(next) => patchCampaign.mutate({ sendflow_broadcasts: next })}
+      />
+
+      <BlackFridayLadderEditor
+        ladderId={c.coupon_ladder_id}
+        onAttach={(id) => patchCampaign.mutate({ coupon_ladder_id: id })}
       />
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -2512,6 +2519,237 @@ function BroadcastsEditor({
           </Button>
         </div>
       </div>
+    </Card>
+  );
+}
+
+function useLadders() {
+  return useQuery({
+    queryKey: ['ladders'],
+    queryFn: () => api.get<{ ok: true; ladders: CouponLadder[] }>('/api/ladders'),
+  });
+}
+
+function parseSwitchyRef(line: string): { domain: string; slug: string } | null {
+  const s = line.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const m = /^([^/]+)\/(.+)$/.exec(s);
+  return m ? { domain: m[1]!, slug: m[2]! } : null;
+}
+
+function BlackFridayLadderEditor({
+  ladderId,
+  onAttach,
+}: {
+  ladderId: string | null;
+  onAttach: (id: string | null) => void;
+}) {
+  const qc = useQueryClient();
+  const q = useLadders();
+  const ladders = q.data?.ladders ?? [];
+  const ladder = ladders.find((l) => l.id === ladderId) ?? null;
+
+  const patch = useMutation({
+    mutationFn: (body: Partial<CouponLadder>) =>
+      api.patch<{ ladder: CouponLadder }>(`/api/ladders/${ladderId}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ladders'] }),
+  });
+  const createLadder = useMutation({
+    mutationFn: () => api.post<{ ladder: CouponLadder }>('/api/ladders', { name: 'Escada Black Friday' }),
+    onSuccess: async (r) => {
+      await qc.invalidateQueries({ queryKey: ['ladders'] });
+      onAttach(r.ladder.id);
+    },
+  });
+
+  const tiers = ladder?.tiers ?? [];
+
+  function setTiers(next: BfTier[]) {
+    patch.mutate({ tiers: next });
+  }
+  function updateTier(i: number, field: keyof BfTier, value: string | number | null) {
+    const next = tiers.map((t, idx) => (idx === i ? { ...t, [field]: value } : t));
+    setTiers(next);
+  }
+
+  return (
+    <Card accent="amber" className="mt-6">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3>// Black Friday — escada de cupons</h3>
+          <p className="mt-1.5 max-w-2xl text-[11px] text-muted">
+            Conforme as vendas COM cupom (lido de <code className="text-accent-2">Discount.coupon_code</code>)
+            somam, o cupom regride (CPDF10 → CPDF9 → …). Na virada, atualiza os links do Switchy e avisa
+            no(s) grupo(s). Anexe as 2 campanhas da oferta à mesma escada pra somar as duas.
+          </p>
+        </div>
+        <label className="block min-w-[220px]">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+            Escada desta campanha
+          </span>
+          <select
+            value={ladderId ?? ''}
+            onChange={(e) => {
+              if (e.target.value === '__new__') createLadder.mutate();
+              else onAttach(e.target.value || null);
+            }}
+          >
+            <option value="">— nenhuma —</option>
+            {ladders.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+            <option value="__new__">+ criar nova escada</option>
+          </select>
+        </label>
+      </div>
+
+      {!ladder ? (
+        <p className="text-[11px] text-muted-2">
+          Sem escada anexada. Crie uma (ou escolha a mesma das 2 campanhas da oferta) pra ativar a Black
+          Friday nesta campanha.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={ladder.enabled}
+              onClick={() => patch.mutate({ enabled: !ladder.enabled })}
+              className={`relative h-[18px] w-8 shrink-0 rounded-[10px] border transition-colors ${
+                ladder.enabled ? 'border-accent-3 bg-accent-3/15' : 'border-border bg-surface'
+              }`}
+              title={ladder.enabled ? 'ligada' : 'desligada'}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full transition-transform ${
+                  ladder.enabled ? 'bg-accent-3 translate-x-3.5' : 'bg-muted'
+                }`}
+              />
+            </button>
+            <span className="text-[11px] text-muted">
+              {ladder.enabled ? 'Ligada' : 'Desligada'}
+            </span>
+            <span className="text-[11px] text-muted-2">
+              Vendidas: <strong className="text-text">{ladder.total_sold}</strong> · Faixa atual:{' '}
+              <code className="text-accent-4">{ladder.tiers[ladder.tier_index]?.coupon ?? '—'}</code>
+            </span>
+            <label className="ml-auto flex items-center gap-2 text-[11px] text-muted-2">
+              avisar a cada
+              <input
+                type="number"
+                min={0}
+                defaultValue={ladder.announce_every}
+                key={`ae-${ladder.id}-${ladder.announce_every}`}
+                onBlur={(e) => {
+                  const n = Math.max(0, Number(e.target.value) || 0);
+                  if (n !== ladder.announce_every) patch.mutate({ announce_every: n });
+                }}
+                className="!w-[70px] !py-1 !px-2 !text-[12px]"
+              />
+              vendas
+            </label>
+          </div>
+
+          <div>
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Faixas (ordem: maior desconto primeiro)
+            </span>
+            <div className="space-y-2">
+              {tiers.map((t, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <span className="w-5 text-right text-[11px] font-semibold text-muted-2">{i + 1}.</span>
+                  <input
+                    defaultValue={t.coupon}
+                    key={`c-${ladder.id}-${i}-${t.coupon}`}
+                    onBlur={(e) => e.target.value !== t.coupon && updateTier(i, 'coupon', e.target.value)}
+                    placeholder="CPDF10"
+                    className="!w-[110px] !py-1.5 !px-2.5 !text-[12px]"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    defaultValue={t.quota}
+                    key={`q-${ladder.id}-${i}-${t.quota}`}
+                    onBlur={(e) => {
+                      const n = Math.max(0, Number(e.target.value) || 0);
+                      if (n !== t.quota) updateTier(i, 'quota', n);
+                    }}
+                    placeholder="qtd"
+                    className="!w-[80px] !py-1.5 !px-2.5 !text-[12px]"
+                    title="Quantas vendas essa faixa dura"
+                  />
+                  <input
+                    defaultValue={t.label ?? ''}
+                    key={`l-${ladder.id}-${i}-${t.label ?? ''}`}
+                    onBlur={(e) => e.target.value !== (t.label ?? '') && updateTier(i, 'label', e.target.value || null)}
+                    placeholder="10%"
+                    className="!w-[70px] !py-1.5 !px-2.5 !text-[12px]"
+                    title="Rótulo (ex: 10%) usado no aviso"
+                  />
+                  <input
+                    type="datetime-local"
+                    defaultValue={t.until ? t.until.slice(0, 16) : ''}
+                    key={`u-${ladder.id}-${i}-${t.until ?? ''}`}
+                    onBlur={(e) => {
+                      const v = e.target.value ? new Date(e.target.value).toISOString() : null;
+                      if (v !== (t.until ?? null)) updateTier(i, 'until', v);
+                    }}
+                    className="!w-[200px] !py-1.5 !px-2.5 !text-[12px]"
+                    title="(Opcional) regride nesta data mesmo sem bater a quota"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setTiers(tiers.filter((_, idx) => idx !== i))}
+                    className="rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
+                  >
+                    x
+                  </button>
+                </div>
+              ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setTiers([...tiers, { coupon: '', quota: 100, label: '' }])}
+              >
+                + faixa
+              </Button>
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Links do Switchy (1 por linha — ex: links.danilogato.com.br/123M4)
+            </span>
+            <textarea
+              rows={3}
+              defaultValue={(ladder.switchy_links ?? []).map((l) => `${l.domain}/${l.slug}`).join('\n')}
+              key={`sl-${ladder.id}-${(ladder.switchy_links ?? []).length}`}
+              onBlur={(e) => {
+                const refs = e.target.value
+                  .split('\n')
+                  .map((l) => parseSwitchyRef(l))
+                  .filter((r): r is { domain: string; slug: string } => r !== null);
+                patch.mutate({ switchy_links: refs });
+              }}
+              placeholder="links.danilogato.com.br/123M4"
+              style={{ fontFamily: '"JetBrains Mono", monospace' }}
+              className="!text-[12px]"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+              Na virada, o <code>coupon=</code> do destino desses links é trocado pro cupom da nova faixa
+              (preserva o resto do link). Teste a leitura em Configurações → Switchy antes.
+            </span>
+          </label>
+
+          <Callout kind="tip">
+            Pra somar as 2 campanhas da oferta: abra a outra campanha e selecione{' '}
+            <strong>a mesma escada</strong> no seletor acima. As vendas das duas somam no mesmo contador e
+            o aviso vai pros grupos das duas.
+          </Callout>
+        </div>
+      )}
     </Card>
   );
 }
