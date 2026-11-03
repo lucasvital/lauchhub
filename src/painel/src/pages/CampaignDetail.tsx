@@ -2762,145 +2762,15 @@ function BlackFridayLadderEditor({
             </span>
           </label>
 
-          <LadderAnnounceTargets
-            targets={ladder.announce_targets ?? []}
-            onChange={(next) => patch.mutate({ announce_targets: next })}
-          />
-
           <Callout kind="tip">
-            O aviso é postado nos grupos selecionados acima — você pode somar{' '}
-            <strong>várias releases do SendFlow</strong> (ex: 2 grupos de uma campanha + 2 de outra).
-            Vendas com os cupons da escada, em qualquer campanha anexada a ela, somam no mesmo contador.
+            O aviso é postado nos <strong>grupos do SendFlow da campanha</strong> (o bloco “SendFlow ·
+            grupos” lá em cima) — inclusive quando você soma <strong>vários releases</strong> lá. Basta
+            anexar a campanha a esta escada; não precisa reconfigurar os grupos aqui. Vendas com os
+            cupons da escada, em qualquer campanha anexada, somam no mesmo contador.
           </Callout>
         </div>
       )}
     </Card>
-  );
-}
-
-function LadderAnnounceTargets({
-  targets,
-  onChange,
-}: {
-  targets: { releaseId: string; accountId: string; groupIds: string[] }[];
-  onChange: (next: { releaseId: string; accountId: string; groupIds: string[] }[]) => void;
-}) {
-  const relQ = useSendflowReleases();
-  const releases = relQ.data?.items ?? [];
-  const update = (i: number, patch: Partial<{ releaseId: string; accountId: string; groupIds: string[] }>) =>
-    onChange(targets.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
-  return (
-    <div>
-      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-        Grupos do aviso (pode somar várias releases do SendFlow)
-      </span>
-      <div className="space-y-3">
-        {targets.length === 0 && (
-          <p className="text-[10px] text-muted-2">
-            Nenhuma release. Adicione uma abaixo e marque os grupos — repita pra cada campanha do
-            SendFlow que deve receber o aviso.
-          </p>
-        )}
-        {targets.map((t, i) => (
-          <LadderTargetRow
-            key={i}
-            releases={releases}
-            target={t}
-            onChange={(patch) => update(i, patch)}
-            onRemove={() => onChange(targets.filter((_, idx) => idx !== i))}
-          />
-        ))}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onChange([...targets, { releaseId: '', accountId: '', groupIds: [] }])}
-        >
-          + release do SendFlow
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function LadderTargetRow({
-  releases,
-  target,
-  onChange,
-  onRemove,
-}: {
-  releases: SendflowReleaseOption[];
-  target: { releaseId: string; accountId: string; groupIds: string[] };
-  onChange: (patch: Partial<{ releaseId: string; accountId: string; groupIds: string[] }>) => void;
-  onRemove: () => void;
-}) {
-  const gq = useSendflowGroups(target.releaseId || null);
-  const groups = gq.data?.items ?? [];
-  function pickRelease(id: string): void {
-    const r = releases.find((x) => x.id === id);
-    onChange({ releaseId: id, accountId: r?.accountIds?.[0] ?? '', groupIds: [] });
-  }
-  function toggleGroup(gid: string): void {
-    onChange({
-      groupIds: target.groupIds.includes(gid)
-        ? target.groupIds.filter((g) => g !== gid)
-        : [...target.groupIds, gid],
-    });
-  }
-  return (
-    <div className="rounded border border-border bg-dim p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={target.releaseId}
-          onChange={(e) => pickRelease(e.target.value)}
-          className="min-w-[200px] flex-1"
-        >
-          <option value="">— escolha a campanha (release) —</option>
-          {releases.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-          {target.releaseId && !releases.find((r) => r.id === target.releaseId) && (
-            <option value={target.releaseId}>{target.releaseId} (fora da lista)</option>
-          )}
-        </select>
-        <input
-          value={target.accountId}
-          onChange={(e) => onChange({ accountId: e.target.value })}
-          placeholder="accountId (conta que envia)"
-          className="!w-[220px] !py-1.5 !px-2.5 !text-[12px]"
-        />
-        <button
-          type="button"
-          onClick={onRemove}
-          className="rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
-        >
-          remover
-        </button>
-      </div>
-      {target.releaseId && (
-        <div className="mt-2 max-h-36 space-y-1 overflow-y-auto rounded border border-border bg-surface p-2">
-          {groups.length === 0 && !gq.isLoading ? (
-            <p className="text-[10px] text-muted-2">Nenhum grupo nessa release.</p>
-          ) : (
-            groups.map((g) => (
-              <label
-                key={g.id}
-                className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-dim"
-              >
-                <input
-                  type="checkbox"
-                  checked={target.groupIds.includes(g.id)}
-                  onChange={() => toggleGroup(g.id)}
-                  className="h-3.5 w-3.5"
-                />
-                <span className="flex-1 truncate text-text">{g.name}</span>
-              </label>
-            ))
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
