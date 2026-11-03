@@ -165,6 +165,29 @@ describe('runBroadcastTick', () => {
     expect(res).toEqual({ fired: 1, posted: 2, failed: 0 });
   });
 
+  it('replays the template to EVERY sendflow target (multi-release)', async () => {
+    const c = campaign({
+      sendflow_broadcasts: [{ id: 'b1', enabled: true, template_id: 't1', times: ['09:00'] }],
+    });
+    (c as unknown as { sendflow_targets: unknown }).sendflow_targets = [
+      { releaseId: 'relA', accountId: 'accA', groupIds: ['120363000000000001'] },
+      { releaseId: 'relB', accountId: 'accB', groupIds: ['120363000000000002'] },
+    ];
+    const send = vi.fn().mockResolvedValue(true);
+    const res = await runBroadcastTick({
+      now,
+      listCampaigns: () => Promise.resolve([c]),
+      claim: vi.fn().mockResolvedValue(true),
+      fetchTemplate: vi.fn().mockResolvedValue(template),
+      send,
+      sleepMs: 0,
+    });
+    // 2 template messages × 2 targets = 4 sends.
+    expect(send).toHaveBeenCalledTimes(4);
+    expect(new Set(send.mock.calls.map((c2) => c2[1].releaseId))).toEqual(new Set(['relA', 'relB']));
+    expect(res).toMatchObject({ fired: 1, posted: 4, failed: 0 });
+  });
+
   it('does not send when the claim is lost (already fired this slot)', async () => {
     const { deps, send } = makeDeps({ claim: vi.fn().mockResolvedValue(false) });
     const res = await runBroadcastTick(deps);

@@ -10,6 +10,7 @@ import { TransientError } from '../integrations/_shared/errors.js';
 import { logger } from '../shared/logger.js';
 import { render } from '../shared/template.js';
 import { assembleUtm, buildCheckoutLinks } from '../shared/checkout.js';
+import { resolveSendflowTargets } from '../shared/sendflow-targets.js';
 import type { WebhookJob } from '../types/job.js';
 
 const log = logger.child({ worker: 'sendflow' });
@@ -107,14 +108,15 @@ export async function processSendflowJob(
     action: job.sendflow_action ?? 'process',
   });
 
-  const releaseId = job.config.sendflow_release_id;
-  const groupIds = (job.config.sendflow_group_ids ?? []).filter(Boolean);
-  const accountId = job.config.sendflow_account_id;
+  // Resolve the campaign's SendFlow destinations — one or many releases, each
+  // with its own account + groups. Removal runs for every target; posting runs
+  // for every target that has an account.
+  const targets = resolveSendflowTargets(job.config);
+  const postTargets = targets.filter((t) => Boolean(t.accountId));
   const messages = (job.config.sendflow_messages ?? []).filter((m) => m.text?.trim());
 
-  const hasTarget = Boolean(releaseId) && groupIds.length > 0;
-  const wantsPost = hasTarget && Boolean(accountId) && messages.length > 0;
-  const wantsRemove = hasTarget;
+  const wantsRemove = targets.length > 0;
+  const wantsPost = postTargets.length > 0 && messages.length > 0;
 
   if (!wantsPost && !wantsRemove) {
     jobLog.info('sendflow_skipped_not_configured');
@@ -129,12 +131,23 @@ export async function processSendflowJob(
 
   // ─── Delayed removal job (enqueued after the welcome message) ──────────────
   // A dedicated job (no message posting), so failures can retry/DLQ safely
-  // without any risk of re-posting the welcome message.
+  // without any risk of re-posting the welcome message. Removes from every
+  // target's groups.
   if (job.sendflow_action === 'remove') {
     if (!wantsRemove) return { posted: 0, removed: 0, failed: 0, skipped: true };
-    await remove({ releaseId: releaseId!, groupIds, participants: [phone] });
-    jobLog.info({ release_id: releaseId, group_ids: groupIds }, 'sendflow_removed_delayed');
-    return { posted: 0, removed: 1, failed: 0 };
+    let removed = 0;
+    let failed = 0;
+    for (const t of targets) {
+      try {
+        await remove({ releaseId: t.releaseId, groupIds: t.groupIds, participants: [phone] });
+        removed += 1;
+        jobLog.info({ release_id: t.releaseId, group_ids: t.groupIds }, 'sendflow_removed_delayed');
+      } catch (err) {
+        failed += 1;
+        jobLog.warn({ err, release_id: t.releaseId }, 'sendflow_remove_delayed_failed');
+      }
+    }
+    return { posted: 0, removed, failed };
   }
 
   // ─── Spacing (drip) ────────────────────────────────────────────────────────
@@ -166,20 +179,22 @@ export async function processSendflowJob(
   let removed = 0;
   let failed = 0;
 
-  // 1) Post the message(s) to the group(s), mentioning the buyer.
+  // 1) Post the message(s) to every target's group(s), mentioning the buyer.
   if (wantsPost) {
     const coupon = job.config.coupon ?? null;
 
     // 'random' → treat the list as interchangeable variations and post ONE at
     // random (each buyer gets a different congratulations). 'all' → post every
     // message in order (a sequence). Default 'all' for backward compatibility.
+    // Pick ONCE so all targets post the same text for this buyer.
     const outgoing =
       job.config.sendflow_send_mode === 'random'
         ? [messages[Math.floor(Math.random() * messages.length)]]
         : messages;
 
-    for (let i = 0; i < outgoing.length; i += 1) {
-      const msg = outgoing[i];
+    // Render each message once (same text goes to every target's groups).
+    const rendered: string[] = [];
+    for (const msg of outgoing) {
       if (!msg) continue;
       // Per-message UTM overrides the campaign default when it has any key set;
       // otherwise fall back to the campaign-level checkout_utm fragment.
@@ -202,46 +217,59 @@ export async function processSendflowJob(
         phone,
       };
       const messageText = render(msg.text, ctx);
-      if (!messageText.trim()) continue;
+      if (messageText.trim()) rendered.push(messageText);
+    }
 
+    let sent = 0;
+    const totalSends = postTargets.length * rendered.length;
+    for (const t of postTargets) {
+      for (const messageText of rendered) {
+        const ok = await bestEffort(
+          () =>
+            sendGroup({
+              releaseId: t.releaseId,
+              accountId: t.accountId!,
+              groupIds: t.groupIds,
+              messageText,
+            }),
+          {
+            tries: 3,
+            sleepMs,
+            onError: (err, attempt) =>
+              jobLog.warn({ err, release_id: t.releaseId, attempt }, 'sendflow_group_post_failed'),
+          },
+        );
+        if (ok) posted += 1;
+        else failed += 1;
+        sent += 1;
+        if (sent < totalSends) await sleep(sleepMs);
+      }
+    }
+    jobLog.info({ targets: postTargets.length, posted, failed }, 'sendflow_group_posted');
+  }
+
+  // 2) Remove the buyer from every target's group(s) — right after their
+  //    message. The gap before the NEXT buyer's message is the spacing above,
+  //    so the group sees "message → remove", wait, "message → remove".
+  if (wantsRemove) {
+    for (let i = 0; i < targets.length; i += 1) {
+      const t = targets[i]!;
       const ok = await bestEffort(
-        () =>
-          sendGroup({
-            releaseId: releaseId!,
-            accountId: accountId!,
-            groupIds,
-            messageText,
-          }),
+        () => remove({ releaseId: t.releaseId, groupIds: t.groupIds, participants: [phone] }),
         {
           tries: 3,
           sleepMs,
-          onError: (err, attempt) => jobLog.warn({ err, index: i, attempt }, 'sendflow_group_post_failed'),
+          onError: (err, attempt) =>
+            jobLog.warn({ err, release_id: t.releaseId, attempt }, 'sendflow_remove_failed'),
         },
       );
-      if (ok) posted += 1;
-      else failed += 1;
-      if (i < outgoing.length - 1) await sleep(sleepMs);
-    }
-    jobLog.info({ account_id: accountId, group_ids: groupIds, posted, failed }, 'sendflow_group_posted');
-  }
-
-  // 2) Remove the buyer from the group(s) — right after their message. The gap
-  //    before the NEXT buyer's message is the spacing above, so the group sees
-  //    "message → remove", wait, "message → remove".
-  if (wantsRemove) {
-    const ok = await bestEffort(
-      () => remove({ releaseId: releaseId!, groupIds, participants: [phone] }),
-      {
-        tries: 3,
-        sleepMs,
-        onError: (err, attempt) => jobLog.warn({ err, attempt }, 'sendflow_remove_failed'),
-      },
-    );
-    if (ok) {
-      removed = 1;
-      jobLog.info({ release_id: releaseId, group_ids: groupIds }, 'sendflow_removed');
-    } else {
-      failed += 1;
+      if (ok) {
+        removed += 1;
+        jobLog.info({ release_id: t.releaseId, group_ids: t.groupIds }, 'sendflow_removed');
+      } else {
+        failed += 1;
+      }
+      if (i < targets.length - 1) await sleep(sleepMs);
     }
   }
 

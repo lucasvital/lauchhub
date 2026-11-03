@@ -3,6 +3,7 @@ import type { CampaignRow } from '../db/campaigns.js';
 import * as instances from '../db/instances.js';
 import type { EventId, JobConfigSlice, WebhookJob, WorkerId } from '../types/job.js';
 import { extractContact, extractOrder, extractUtm, type KiwifyPayload } from './event-detection.js';
+import { resolveSendflowTargets } from '../shared/sendflow-targets.js';
 
 /**
  * Resolve credentials from the campaign's instance FK.
@@ -78,6 +79,7 @@ async function sliceConfig(
       // API key is a global secret read at runtime by the worker; only the
       // per-campaign target (release + groups) travels in the job.
       return {
+        sendflow_targets: resolveSendflowTargets(campaign),
         sendflow_release_id: campaign.sendflow_release_id,
         sendflow_group_ids: campaign.sendflow_group_ids,
         sendflow_account_id: campaign.sendflow_account_id,

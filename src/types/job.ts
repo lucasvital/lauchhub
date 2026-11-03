@@ -5,6 +5,10 @@
  * enqueues into BullMQ queues and that every worker (Stories 3.1-3.4) consumes.
  */
 
+import type { SendflowTarget } from '../shared/sendflow-targets.js';
+
+export type { SendflowTarget };
+
 export type WorkerId = 'sheets' | 'chatwoot' | 'mautic' | 'meta' | 'sendflow';
 
 export type EventId =
@@ -245,6 +249,11 @@ export interface JobConfigSlice {
   // SendFlow — remove the buyer from WhatsApp group(s) of a SendFlow release.
   // API key is a global secret read at runtime; only the per-campaign target
   // lives here.
+  //
+  // Multi-release: a campaign can target groups across SEVERAL releases. The
+  // resolved list travels here; the legacy single fields below are kept so
+  // in-flight jobs (enqueued before the multi-release change) still work.
+  sendflow_targets?: SendflowTarget[];
   sendflow_release_id?: string | null;
   sendflow_group_ids?: string[];
   // SendFlow — send direct WhatsApp text messages from this account. The

@@ -12,6 +12,7 @@ import { buildCheckoutLinks } from '../shared/checkout.js';
 import { saoPauloDateTime } from '../shared/datetime.js';
 import { logger } from '../shared/logger.js';
 import { advanceLaddersByDate } from './bf-ladder.js';
+import { resolveSendflowTargets } from '../shared/sendflow-targets.js';
 import type { SendflowBroadcast } from '../types/job.js';
 
 const log = logger.child({ component: 'broadcast-scheduler' });
@@ -62,10 +63,15 @@ interface GroupTarget {
   groupIds: string[];
 }
 
-function targetOf(c: CampaignRow): GroupTarget | null {
-  const groupIds = (c.sendflow_group_ids ?? []).filter(Boolean);
-  if (!c.sendflow_release_id || !c.sendflow_account_id || groupIds.length === 0) return null;
-  return { releaseId: c.sendflow_release_id, accountId: c.sendflow_account_id, groupIds };
+/**
+ * Broadcast targets of a campaign: every SendFlow target that has an account
+ * (broadcasts post messages, so an account is required). Supports several
+ * releases; a broadcast is replayed to each target's groups.
+ */
+function targetsOf(c: CampaignRow): GroupTarget[] {
+  return resolveSendflowTargets(c)
+    .filter((t) => Boolean(t.accountId))
+    .map((t) => ({ releaseId: t.releaseId, accountId: t.accountId!, groupIds: t.groupIds }));
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -144,8 +150,8 @@ export async function fireBroadcastNow(
   const send = deps.send ?? sendTemplateMessageToGroups;
   const sleepMs = deps.sleepMs ?? 400;
 
-  const target = targetOf(campaign);
-  if (!target) return { ok: false, reason: 'no_target', posted: 0 };
+  const targets = targetsOf(campaign);
+  if (targets.length === 0) return { ok: false, reason: 'no_target', posted: 0 };
 
   if ((broadcast.kind ?? 'template') === 'names') {
     const variations = (broadcast.messages ?? []).filter((m) => m.trim() !== '');
@@ -160,14 +166,18 @@ export async function fireBroadcastNow(
         : [variations[Math.floor(Math.random() * variations.length)] ?? ''];
     const checkoutUrl = campaignCheckoutUrl(campaign);
 
+    const texts = outgoing.map((o) => buildNamesText(o ?? '', names, checkoutUrl)).filter((t) => t.trim());
+    const preview = texts[0];
+
     let posted = 0;
-    let preview: string | undefined;
-    for (let i = 0; i < outgoing.length; i += 1) {
-      const text = buildNamesText(outgoing[i] ?? '', names, checkoutUrl);
-      if (!text.trim()) continue;
-      if (preview === undefined) preview = text;
-      if (await sendText(text, target)) posted += 1;
-      if (i < outgoing.length - 1) await sleep(sleepMs);
+    let sent = 0;
+    const total = texts.length * targets.length;
+    for (const text of texts) {
+      for (const target of targets) {
+        if (await sendText(text, target)) posted += 1;
+        sent += 1;
+        if (sent < total) await sleep(sleepMs);
+      }
     }
     return { ok: posted > 0, posted, namesCount: names.length, preview };
   }
@@ -177,9 +187,14 @@ export async function fireBroadcastNow(
   const template = await fetchTemplate(broadcast.template_id);
   if (!template) return { ok: false, reason: 'template_not_found', posted: 0 };
   let posted = 0;
-  for (const [i, msg] of template.messages.entries()) {
-    if (await send(msg, target)) posted += 1;
-    if (i < template.messages.length - 1) await sleep(sleepMs);
+  let sent = 0;
+  const total = template.messages.length * targets.length;
+  for (const msg of template.messages) {
+    for (const target of targets) {
+      if (await send(msg, target)) posted += 1;
+      sent += 1;
+      if (sent < total) await sleep(sleepMs);
+    }
   }
   return { ok: posted > 0, posted };
 }
@@ -223,8 +238,8 @@ export async function runBroadcastTick(deps: TickDeps = {}): Promise<{
     if (!won) continue; // already fired for this minute slot
     fired += 1;
 
-    const target = targetOf(campaign);
-    if (!target) {
+    const targets = targetsOf(campaign);
+    if (targets.length === 0) {
       log.warn({ campaign: campaign.id, broadcast: broadcast.id }, 'broadcast_skipped_no_target');
       continue;
     }
@@ -251,19 +266,23 @@ export async function runBroadcastTick(deps: TickDeps = {}): Promise<{
           : [variations[Math.floor(Math.random() * variations.length)] ?? ''];
       const checkoutUrl = campaignCheckoutUrl(campaign);
 
-      for (let i = 0; i < outgoing.length; i += 1) {
-        const text = buildNamesText(outgoing[i] ?? '', names, checkoutUrl);
-        if (!text.trim()) continue;
-        try {
-          if (await sendText(text, target)) posted += 1;
-        } catch (err) {
-          failed += 1;
-          log.warn({ err, broadcast: broadcast.id, index: i }, 'broadcast_names_post_failed');
+      const texts = outgoing.map((o) => buildNamesText(o ?? '', names, checkoutUrl)).filter((t) => t.trim());
+      let sent = 0;
+      const total = texts.length * targets.length;
+      for (const [i, text] of texts.entries()) {
+        for (const target of targets) {
+          try {
+            if (await sendText(text, target)) posted += 1;
+          } catch (err) {
+            failed += 1;
+            log.warn({ err, broadcast: broadcast.id, index: i, release_id: target.releaseId }, 'broadcast_names_post_failed');
+          }
+          sent += 1;
+          if (sent < total) await sleep(sleepMs);
         }
-        if (i < outgoing.length - 1) await sleep(sleepMs);
       }
       log.info(
-        { campaign: campaign.id, broadcast: broadcast.id, names: names.length, sent: outgoing.length },
+        { campaign: campaign.id, broadcast: broadcast.id, names: names.length, sent, targets: targets.length },
         'broadcast_names_fired',
       );
       continue;
@@ -292,17 +311,22 @@ export async function runBroadcastTick(deps: TickDeps = {}): Promise<{
     }
 
     const messages = template.messages;
+    let sent = 0;
+    const total = messages.length * targets.length;
     for (const [i, msg] of messages.entries()) {
-      try {
-        if (await send(msg, target)) posted += 1;
-      } catch (err) {
-        failed += 1;
-        log.warn({ err, broadcast: broadcast.id, index: i }, 'broadcast_post_failed');
+      for (const target of targets) {
+        try {
+          if (await send(msg, target)) posted += 1;
+        } catch (err) {
+          failed += 1;
+          log.warn({ err, broadcast: broadcast.id, index: i, release_id: target.releaseId }, 'broadcast_post_failed');
+        }
+        sent += 1;
+        if (sent < total) await sleep(sleepMs);
       }
-      if (i < messages.length - 1) await sleep(sleepMs);
     }
     log.info(
-      { campaign: campaign.id, broadcast: broadcast.id, template: template.id, count: messages.length },
+      { campaign: campaign.id, broadcast: broadcast.id, template: template.id, count: messages.length, targets: targets.length },
       'broadcast_fired',
     );
   }

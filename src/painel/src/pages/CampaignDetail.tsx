@@ -24,6 +24,7 @@ import {
   type SendflowListResponse,
   type SendflowReleaseOption,
   type SendflowSendMode,
+  type SendflowTarget,
   type SendflowTemplateOption,
   type SheetTabOption,
   type WorkerId,
@@ -429,20 +430,31 @@ export function CampaignDetailPage() {
               <code>utm_*</code> (sem <code>?</code> inicial).
             </span>
           </label>
-          <SendflowPicker
-            releaseId={c.sendflow_release_id}
-            groupIds={c.sendflow_group_ids ?? []}
-            accountId={c.sendflow_account_id}
+          <SendflowTargetsEditor
+            targets={
+              c.sendflow_targets && c.sendflow_targets.length > 0
+                ? c.sendflow_targets
+                : c.sendflow_release_id && (c.sendflow_group_ids ?? []).length > 0
+                  ? [
+                      {
+                        releaseId: c.sendflow_release_id,
+                        accountId: c.sendflow_account_id,
+                        groupIds: c.sendflow_group_ids ?? [],
+                      },
+                    ]
+                  : []
+            }
             removeDelayMinutes={c.sendflow_remove_delay_minutes ?? 0}
-            onChangeRelease={(v) =>
+            onChangeTargets={(next) =>
               patchCampaign.mutate({
-                sendflow_release_id: v,
+                sendflow_targets: next,
+                // The multi-release editor is now the source of truth — clear
+                // the legacy single fields so they don't shadow it.
+                sendflow_release_id: null,
                 sendflow_group_ids: [],
                 sendflow_account_id: null,
               })
             }
-            onChangeGroups={(list) => patchCampaign.mutate({ sendflow_group_ids: list })}
-            onChangeAccount={(v) => patchCampaign.mutate({ sendflow_account_id: v })}
             onChangeRemoveDelay={(v) => patchCampaign.mutate({ sendflow_remove_delay_minutes: v })}
           />
         </div>
@@ -590,9 +602,16 @@ export function CampaignDetailPage() {
       <BroadcastsEditor
         campaignId={c.id}
         broadcasts={c.sendflow_broadcasts ?? []}
-        hasTarget={Boolean(
-          c.sendflow_release_id && c.sendflow_account_id && (c.sendflow_group_ids ?? []).length > 0,
-        )}
+        hasTarget={
+          (c.sendflow_targets ?? []).some(
+            (t) => t.releaseId && t.accountId && (t.groupIds ?? []).length > 0,
+          ) ||
+          Boolean(
+            c.sendflow_release_id &&
+              c.sendflow_account_id &&
+              (c.sendflow_group_ids ?? []).length > 0,
+          )
+        }
         onSave={(next) => patchCampaign.mutate({ sendflow_broadcasts: next })}
       />
 
@@ -2905,61 +2924,37 @@ function useSendflowGroups(releaseId: string | null) {
   });
 }
 
-function SendflowPicker({
-  releaseId,
-  groupIds,
-  accountId,
+function SendflowTargetsEditor({
+  targets,
   removeDelayMinutes,
-  onChangeRelease,
-  onChangeGroups,
-  onChangeAccount,
+  onChangeTargets,
   onChangeRemoveDelay,
 }: {
-  releaseId: string | null;
-  groupIds: string[];
-  accountId: string | null;
+  targets: SendflowTarget[];
   removeDelayMinutes: number;
-  onChangeRelease: (v: string | null) => void;
-  onChangeGroups: (list: string[]) => void;
-  onChangeAccount: (v: string | null) => void;
+  onChangeTargets: (next: SendflowTarget[]) => void;
   onChangeRemoveDelay: (v: number) => void;
 }) {
   const releasesQ = useSendflowReleases();
-  const groupsQ = useSendflowGroups(releaseId);
-
   const releases = releasesQ.data?.items ?? [];
-  const groups = groupsQ.data?.items ?? [];
-  const selectedRelease = releases.find((r) => r.id === releaseId);
-  const accountIds = selectedRelease?.accountIds ?? [];
-  const noApiKey =
-    releasesQ.data?.ok === false && releasesQ.data?.error === 'no_api_key';
+  const noApiKey = releasesQ.data?.ok === false && releasesQ.data?.error === 'no_api_key';
 
-  // Manual fallback: on when the API can't be used (no key / upstream down) or
-  // the user opts in. Lets the operator paste IDs the same way as before.
-  const [manual, setManual] = useState(false);
-  const useManual = manual || noApiKey;
-
-  function toggleGroup(id: string) {
-    onChangeGroups(
-      groupIds.includes(id) ? groupIds.filter((g) => g !== id) : [...groupIds, id],
-    );
+  function updateTarget(i: number, next: SendflowTarget) {
+    onChangeTargets(targets.map((t, idx) => (idx === i ? next : t)));
+  }
+  function removeTarget(i: number) {
+    onChangeTargets(targets.filter((_, idx) => idx !== i));
+  }
+  function addTarget() {
+    onChangeTargets([...targets, { releaseId: '', accountId: null, groupIds: [] }]);
   }
 
   return (
     <div className="block sm:col-span-2 rounded border border-border bg-dim px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-          SendFlow · remover comprador do grupo
+          SendFlow · grupos (mensagem + remover comprador)
         </span>
-        {!noApiKey && (
-          <button
-            type="button"
-            onClick={() => setManual((m) => !m)}
-            className="text-[11px] text-muted-2 hover:text-accent"
-          >
-            {useManual ? '↺ usar lista da API' : '✎ digitar IDs manual'}
-          </button>
-        )}
       </div>
 
       {noApiKey && (
@@ -2972,6 +2967,150 @@ function SendflowPicker({
         </p>
       )}
 
+      <div className="space-y-3">
+        {targets.length === 0 && (
+          <p className="rounded border border-dashed border-border bg-surface px-3 py-4 text-center text-[11px] text-muted-2">
+            Nenhum release selecionado. Clique em <strong>“+ release do SendFlow”</strong> abaixo
+            para escolher um release e seus grupos. Pode adicionar vários — os grupos de todos
+            recebem a mensagem e o comprador é removido de todos.
+          </p>
+        )}
+        {targets.map((t, i) => (
+          <SendflowTargetRow
+            key={i}
+            index={i}
+            target={t}
+            releases={releases}
+            releasesLoading={releasesQ.isLoading}
+            releasesError={releasesQ.isError || releasesQ.data?.ok === false}
+            onRefetchReleases={() => releasesQ.refetch()}
+            noApiKey={noApiKey}
+            onChange={(next) => updateTarget(i, next)}
+            onRemove={() => removeTarget(i)}
+          />
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={addTarget}
+        className="mt-3 rounded border border-accent/40 px-3 py-1.5 text-[11px] font-semibold text-accent hover:border-accent hover:bg-accent/10"
+      >
+        + release do SendFlow
+      </button>
+
+      <div className="mt-4 border-t border-border pt-3">
+        <label className="block max-w-md">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+            Espaçamento entre mensagens (minutos)
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            defaultValue={removeDelayMinutes}
+            key={`delay-${removeDelayMinutes}`}
+            onBlur={(e) => {
+              const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
+              if (v !== removeDelayMinutes) onChangeRemoveDelay(v);
+            }}
+            placeholder="0"
+          />
+          <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+            Quando várias compras caem juntas, não posta tudo de uma vez: envia a mensagem de um
+            comprador, remove, <strong>espera {removeDelayMinutes || 0} min</strong> e vai pro
+            próximo. <code>0</code> = processa todos assim que chegam.
+          </span>
+        </label>
+      </div>
+
+      <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
+        Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — no evento, a mensagem é
+        postada nos grupos de <strong>todos os releases</strong> acima e o comprador é removido de
+        todos em seguida; o espaçamento acima drena rajadas de vendas uma a uma. Prefira selecionar
+        os grupos na lista (o id certo é o GID <code>120363…</code>, não o doc id).
+        {releasesQ.data?.stale && ' · lista em cache (rate limit da API)'}
+      </p>
+    </div>
+  );
+}
+
+function SendflowTargetRow({
+  index,
+  target,
+  releases,
+  releasesLoading,
+  releasesError,
+  onRefetchReleases,
+  noApiKey,
+  onChange,
+  onRemove,
+}: {
+  index: number;
+  target: SendflowTarget;
+  releases: SendflowReleaseOption[];
+  releasesLoading: boolean;
+  releasesError: boolean;
+  onRefetchReleases: () => void;
+  noApiKey: boolean;
+  onChange: (next: SendflowTarget) => void;
+  onRemove: () => void;
+}) {
+  const releaseId = target.releaseId || null;
+  const groupIds = target.groupIds ?? [];
+  const accountId = target.accountId;
+
+  const groupsQ = useSendflowGroups(releaseId);
+  const groups = groupsQ.data?.items ?? [];
+  const selectedRelease = releases.find((r) => r.id === releaseId);
+  const accountIds = selectedRelease?.accountIds ?? [];
+
+  const [manual, setManual] = useState(false);
+  const useManual = manual || noApiKey;
+
+  function setRelease(v: string | null) {
+    // Changing release invalidates the chosen groups/account.
+    onChange({ releaseId: v ?? '', accountId: null, groupIds: [] });
+  }
+  function toggleGroup(gid: string) {
+    onChange({
+      ...target,
+      groupIds: groupIds.includes(gid) ? groupIds.filter((g) => g !== gid) : [...groupIds, gid],
+    });
+  }
+  function setGroupsManual(list: string[]) {
+    onChange({ ...target, groupIds: list });
+  }
+  function setAccount(v: string | null) {
+    onChange({ ...target, accountId: v });
+  }
+
+  return (
+    <div className="rounded border border-border bg-surface px-3 py-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+          release {index + 1}
+        </span>
+        <div className="flex items-center gap-3">
+          {!noApiKey && (
+            <button
+              type="button"
+              onClick={() => setManual((m) => !m)}
+              className="text-[11px] text-muted-2 hover:text-accent"
+            >
+              {useManual ? '↺ usar lista da API' : '✎ digitar IDs manual'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-[11px] text-accent-5 hover:underline"
+          >
+            ✕ remover
+          </button>
+        </div>
+      </div>
+
       {useManual ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
@@ -2983,7 +3122,7 @@ function SendflowPicker({
               key={`rel-${releaseId ?? ''}`}
               onBlur={(e) => {
                 const v = e.target.value.trim() || null;
-                if (v !== releaseId) onChangeRelease(v);
+                if (v !== releaseId) setRelease(v);
               }}
               placeholder="ID da campanha no SendFlow"
             />
@@ -3000,7 +3139,7 @@ function SendflowPicker({
                   .split(/[\s,]+/)
                   .map((s) => s.trim())
                   .filter(Boolean);
-                if (JSON.stringify(list) !== JSON.stringify(groupIds)) onChangeGroups(list);
+                if (JSON.stringify(list) !== JSON.stringify(groupIds)) setGroupsManual(list);
               }}
               placeholder="GID do grupo, ex: 120363420152631339 (NÃO o doc id — vírgula)"
             />
@@ -3014,16 +3153,16 @@ function SendflowPicker({
                 Release
               </span>
               <PickerStatus
-                isLoading={releasesQ.isLoading}
-                isError={releasesQ.isError || releasesQ.data?.ok === false}
+                isLoading={releasesLoading}
+                isError={releasesError}
                 count={releases.length}
-                onRefetch={() => releasesQ.refetch()}
+                onRefetch={onRefetchReleases}
               />
             </div>
             <select
               value={releaseId ?? ''}
-              onChange={(e) => onChangeRelease(e.target.value || null)}
-              disabled={releasesQ.isLoading}
+              onChange={(e) => setRelease(e.target.value || null)}
+              disabled={releasesLoading}
             >
               <option value="">— escolha a campanha —</option>
               {releases.map((r) => (
@@ -3068,11 +3207,11 @@ function SendflowPicker({
             ) : groups.length === 0 && !groupsQ.isLoading ? (
               <p className="text-[10px] text-muted-2">Nenhum grupo encontrado nesta release.</p>
             ) : (
-              <div className="max-h-40 space-y-1 overflow-y-auto rounded border border-border bg-surface p-2">
+              <div className="max-h-40 space-y-1 overflow-y-auto rounded border border-border bg-dim p-2">
                 {groups.map((g) => (
                   <label
                     key={g.id}
-                    className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-dim"
+                    className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-surface"
                   >
                     <input
                       type="checkbox"
@@ -3093,21 +3232,20 @@ function SendflowPicker({
                     {g.full && <span className="text-accent-4">cheio</span>}
                   </label>
                 ))}
-                {/* Selected ids no longer present in the fetched list — keep them visible. */}
                 {groupIds
-                  .filter((id) => !groups.find((g) => g.id === id))
-                  .map((id) => (
+                  .filter((gid) => !groups.find((g) => g.id === gid))
+                  .map((gid) => (
                     <label
-                      key={id}
-                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-dim"
+                      key={gid}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-surface"
                     >
                       <input
                         type="checkbox"
                         checked
-                        onChange={() => toggleGroup(id)}
+                        onChange={() => toggleGroup(gid)}
                         className="h-3.5 w-3.5"
                       />
-                      <span className="flex-1 truncate text-muted-2">{id} (fora da lista)</span>
+                      <span className="flex-1 truncate text-muted-2">{gid} (fora da lista)</span>
                     </label>
                   ))}
               </div>
@@ -3116,71 +3254,38 @@ function SendflowPicker({
         </div>
       )}
 
-      <div className="mt-3 border-t border-border pt-3">
-        <label className="block max-w-md">
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
-            Conta que envia as mensagens
-          </span>
-          {useManual || accountIds.length === 0 ? (
-            <input
-              defaultValue={accountId ?? ''}
-              key={`acc-${accountId ?? ''}`}
-              onBlur={(e) => {
-                const v = e.target.value.trim() || null;
-                if (v !== accountId) onChangeAccount(v);
-              }}
-              placeholder="accountId da conta WhatsApp no SendFlow"
-            />
-          ) : (
-            <select value={accountId ?? ''} onChange={(e) => onChangeAccount(e.target.value || null)}>
-              <option value="">— escolha a conta —</option>
-              {accountIds.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-              {accountId && !accountIds.includes(accountId) && (
-                <option value={accountId}>{accountId} (fora da lista)</option>
-              )}
-            </select>
-          )}
-          <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
-            Só é usada para <strong>enviar mensagens</strong> no evento (config abaixo). A remoção de
-            grupo não precisa dela.
-          </span>
-        </label>
-
-        <label className="mt-3 block max-w-md">
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
-            Espaçamento entre mensagens (minutos)
-          </span>
+      <label className="mt-3 block max-w-md">
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-2">
+          Conta que envia as mensagens
+        </span>
+        {useManual || accountIds.length === 0 ? (
           <input
-            type="number"
-            min={0}
-            step={1}
-            defaultValue={removeDelayMinutes}
-            key={`delay-${removeDelayMinutes}`}
+            defaultValue={accountId ?? ''}
+            key={`acc-${accountId ?? ''}`}
             onBlur={(e) => {
-              const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
-              if (v !== removeDelayMinutes) onChangeRemoveDelay(v);
+              const v = e.target.value.trim() || null;
+              if (v !== accountId) setAccount(v);
             }}
-            placeholder="0"
+            placeholder="accountId da conta WhatsApp no SendFlow"
           />
-          <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
-            Quando várias compras caem juntas, não posta tudo de uma vez: envia a mensagem de um
-            comprador, remove, <strong>espera {removeDelayMinutes || 0} min</strong> e vai pro
-            próximo. <code>0</code> = processa todos assim que chegam.
-          </span>
-        </label>
-      </div>
-
-      <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
-        Ligue o worker <strong>SendFlow</strong> no evento (grade abaixo) — no evento, a mensagem é
-        postada no(s) grupo(s) e o comprador é removido em seguida; o espaçamento acima drena rajadas
-        de vendas uma a uma. Prefira selecionar os grupos na lista (o id certo é o GID{' '}
-        <code>120363…</code>, não o doc id).
-        {releasesQ.data?.stale && ' · lista em cache (rate limit da API)'}
-      </p>
+        ) : (
+          <select value={accountId ?? ''} onChange={(e) => setAccount(e.target.value || null)}>
+            <option value="">— escolha a conta —</option>
+            {accountIds.map((aid) => (
+              <option key={aid} value={aid}>
+                {aid}
+              </option>
+            ))}
+            {accountId && !accountIds.includes(accountId) && (
+              <option value={accountId}>{accountId} (fora da lista)</option>
+            )}
+          </select>
+        )}
+        <span className="mt-1 block text-[10px] leading-relaxed text-muted-2">
+          Só é usada para <strong>enviar mensagens</strong> no evento. A remoção de grupo não
+          precisa dela.
+        </span>
+      </label>
     </div>
   );
 }
