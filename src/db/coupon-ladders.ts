@@ -1,6 +1,12 @@
 import { query } from './index.js';
 import type { BfTier } from '../shared/coupon-ladder.js';
 
+export interface AnnounceTarget {
+  releaseId: string;
+  accountId: string;
+  groupIds: string[];
+}
+
 export interface CouponLadderRow {
   id: string;
   name: string;
@@ -8,6 +14,7 @@ export interface CouponLadderRow {
   announce_every: number;
   tiers: BfTier[];
   switchy_links: { domain: string; slug: string }[];
+  announce_targets: AnnounceTarget[];
   total_sold: number;
   tier_index: number;
   last_announce: number;
@@ -21,9 +28,10 @@ export interface CouponLadderInput {
   announce_every?: number;
   tiers?: BfTier[];
   switchy_links?: { domain: string; slug: string }[];
+  announce_targets?: AnnounceTarget[];
 }
 
-const COLS = `id, name, enabled, announce_every, tiers, switchy_links,
+const COLS = `id, name, enabled, announce_every, tiers, switchy_links, announce_targets,
   total_sold, tier_index, last_announce, created_at, updated_at`;
 
 export async function list(): Promise<CouponLadderRow[]> {
@@ -38,14 +46,15 @@ export async function findById(id: string): Promise<CouponLadderRow | null> {
 
 export async function create(input: CouponLadderInput): Promise<CouponLadderRow> {
   const r = await query<CouponLadderRow>(
-    `INSERT INTO coupon_ladders (name, enabled, announce_every, tiers, switchy_links)
-     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb) RETURNING ${COLS}`,
+    `INSERT INTO coupon_ladders (name, enabled, announce_every, tiers, switchy_links, announce_targets)
+     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb) RETURNING ${COLS}`,
     [
       input.name ?? 'Escada de cupons',
       input.enabled ?? false,
       input.announce_every ?? 10,
       JSON.stringify(input.tiers ?? []),
       JSON.stringify(input.switchy_links ?? []),
+      JSON.stringify(input.announce_targets ?? []),
     ],
   );
   const row = r.rows[0];
@@ -66,6 +75,7 @@ export async function update(id: string, patch: CouponLadderInput): Promise<Coup
   if (patch.announce_every !== undefined) setField('announce_every', patch.announce_every);
   if (patch.tiers !== undefined) setField('tiers', patch.tiers, true);
   if (patch.switchy_links !== undefined) setField('switchy_links', patch.switchy_links, true);
+  if (patch.announce_targets !== undefined) setField('announce_targets', patch.announce_targets, true);
   if (fields.length === 0) return findById(id);
   fields.push('updated_at = now()');
   params.push(id);

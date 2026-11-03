@@ -54,21 +54,29 @@ async function defaultFeederTargets(ladderId: string): Promise<GroupTarget[]> {
   return out;
 }
 
-async function announce(ladderId: string, text: string, deps: LadderDeps): Promise<void> {
-  const feederTargets = deps.feederTargets ?? defaultFeederTargets;
+async function announce(row: CouponLadderRow, text: string, deps: LadderDeps): Promise<void> {
   const sendGroup = deps.sendGroup ?? defaultSendGroup;
-  let targets: GroupTarget[];
-  try {
-    targets = await feederTargets(ladderId);
-  } catch (err) {
-    log.warn({ err, ladder: ladderId }, 'ladder_targets_failed');
-    return;
+
+  // Prefer the ladder's own announce targets (multiple SendFlow releases +
+  // their groups, configured in the Black Friday block). Fall back to the
+  // feeder campaigns' SendFlow groups when none are set.
+  let targets = (row.announce_targets ?? []).filter(
+    (t) => t.releaseId && t.accountId && (t.groupIds ?? []).length > 0,
+  );
+  if (targets.length === 0) {
+    const feederTargets = deps.feederTargets ?? defaultFeederTargets;
+    try {
+      targets = await feederTargets(row.id);
+    } catch (err) {
+      log.warn({ err, ladder: row.id }, 'ladder_targets_failed');
+      return;
+    }
   }
   for (const t of targets) {
     try {
       await sendGroup(text, t);
     } catch (err) {
-      log.warn({ err, ladder: ladderId }, 'ladder_announce_failed');
+      log.warn({ err, ladder: row.id }, 'ladder_announce_failed');
     }
   }
 }
@@ -94,7 +102,7 @@ async function onAdvance(
   }
   const label = row.tiers[newIndex]?.label;
   const text = `⚡ Esgotou o cupom *${from ?? ''}*! Agora é *${to ?? ''}*${label ? ` (${label})` : ''}. Corre que vai acabar! 🔥`;
-  await announce(row.id, text, deps);
+  await announce(row, text, deps);
   log.info({ ladder: row.id, from, to, tier_index: newIndex }, 'ladder_advanced');
 }
 
@@ -108,7 +116,7 @@ async function announceRemaining(
   if (!tier) return;
   const remaining = remainingInTier(row.tiers, activeIndex, row.total_sold);
   const text = `🎟️ Cupom *${tier.coupon}*${tier.label ? ` (${tier.label})` : ''}: restam *${remaining}* de ${tier.quota}! Garanta já 👇`;
-  await announce(row.id, text, deps);
+  await announce(row, text, deps);
 }
 
 /**
