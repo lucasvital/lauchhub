@@ -1,7 +1,14 @@
 import * as laddersDb from '../db/coupon-ladders.js';
 import type { CouponLadderRow } from '../db/coupon-ladders.js';
 import * as campaignsDb from '../db/campaigns.js';
-import { activeTierIndex, remainingInTier, setCouponInUrl } from '../shared/coupon-ladder.js';
+import {
+  activeTierIndex,
+  ladderShareLink,
+  remainingAnnounceSchedule,
+  remainingInTier,
+  renderLadderText,
+  setCouponInUrl,
+} from '../shared/coupon-ladder.js';
 import { fetchLink, updateLink, type LinkRef } from '../integrations/switchy/client.js';
 import { sendGroupTextMessage } from '../integrations/sendflow/client.js';
 import { resolveSendflowTargets } from '../shared/sendflow-targets.js';
@@ -91,8 +98,10 @@ async function onAdvance(
   deps: LadderDeps,
 ): Promise<void> {
   const setCoupon = deps.setCoupon ?? defaultSetCoupon;
-  const to = row.tiers[newIndex]?.coupon;
-  const from = row.tiers[row.tier_index]?.coupon;
+  const toTier = row.tiers[newIndex];
+  const fromTier = row.tiers[row.tier_index];
+  const to = toTier?.coupon;
+  const from = fromTier?.coupon;
   if (to) {
     for (const ref of row.switchy_links ?? []) {
       try {
@@ -103,8 +112,12 @@ async function onAdvance(
       }
     }
   }
-  const label = row.tiers[newIndex]?.label;
-  const text = `⚡ Esgotou o cupom *${from ?? ''}*! Agora é *${to ?? ''}*${label ? ` (${label})` : ''}. Corre que vai acabar! 🔥`;
+  const label = toTier?.label;
+  // Prefer the tier's own configured "virada" message; fall back to a default.
+  const custom = toTier?.announce_text?.trim();
+  const text = custom
+    ? renderLadderText(custom, { coupon: to ?? '', link: ladderShareLink(row.switchy_links), label })
+    : `⚡ Esgotou o cupom *${from ?? ''}*! Agora é *${to ?? ''}*${label ? ` (${label})` : ''}. Corre que vai acabar! 🔥`;
   await announce(row, text, deps);
   log.info({ ladder: row.id, from, to, tier_index: newIndex }, 'ladder_advanced');
 }
@@ -148,7 +161,29 @@ export async function onCouponSale(
     await onAdvance(row, active, deps);
   }
 
-  if (row.announce_every > 0) {
+  // "Cupom acabando" announces. When any tier carries configured
+  // remaining_messages, use the per-tier 50/25/10% schedule; otherwise fall
+  // back to the legacy "every N sales" milestone.
+  const schedule = remainingAnnounceSchedule(row.tiers);
+  if (schedule.length > 0) {
+    const due = schedule.filter((e) => e.triggerSold <= row.total_sold).length;
+    if (due > 0) {
+      const prev = await laddersDb.claimRemaining(ladderId, due);
+      if (prev !== null) {
+        const link = ladderShareLink(row.switchy_links);
+        for (let i = prev; i < due; i += 1) {
+          const ev = schedule[i]!;
+          const tier = row.tiers[ev.tierIndex];
+          const text = renderLadderText(ev.text, {
+            coupon: tier?.coupon ?? '',
+            link,
+            label: tier?.label,
+          });
+          await announce(row, text, deps);
+        }
+      }
+    }
+  } else if (row.announce_every > 0) {
     const milestone = Math.floor(row.total_sold / row.announce_every) * row.announce_every;
     if (milestone > row.last_announce && milestone > 0 && (await laddersDb.claimAnnounce(ladderId, milestone))) {
       await announceRemaining(row, active, deps);

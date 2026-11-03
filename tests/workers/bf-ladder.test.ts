@@ -6,6 +6,7 @@ vi.mock('../../src/db/coupon-ladders.js', () => ({
   recordSale: vi.fn(),
   claimTierAdvance: vi.fn(),
   claimAnnounce: vi.fn(),
+  claimRemaining: vi.fn(),
   list: vi.fn(),
 }));
 
@@ -94,5 +95,71 @@ describe('onCouponSale', () => {
     vi.mocked(laddersDb.findById).mockResolvedValue(ladder({ enabled: false }));
     await onCouponSale('lad-1', 'CPDF10', { now: NOW });
     expect(laddersDb.recordSale).not.toHaveBeenCalled();
+  });
+
+  it('uses the tier\'s own "virada" message with INSERIR LINK/CUPOM tokens', async () => {
+    const withText = ladder({
+      tiers: [
+        { coupon: 'CPDF10', quota: 2, label: '10%' },
+        { coupon: 'CPDF9', quota: 2, label: '9%', announce_text: 'Novo cupom INSERIR CUPOM 👉 INSERIR LINK' },
+      ],
+    });
+    vi.mocked(laddersDb.findById).mockResolvedValue(withText);
+    vi.mocked(laddersDb.recordSale).mockResolvedValue({ ...withText, total_sold: 2, tier_index: 0 });
+    vi.mocked(laddersDb.claimTierAdvance).mockResolvedValue(true);
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    await onCouponSale('lad-1', 'CPDF10', {
+      now: NOW,
+      setCoupon: vi.fn().mockResolvedValue(undefined),
+      sendGroup,
+      feederTargets: async () => [{ releaseId: 'r', accountId: 'a', groupIds: ['g'] }],
+    });
+    expect(sendGroup.mock.calls[0][0]).toBe('Novo cupom CPDF9 👉 https://links.x.com/abc');
+  });
+
+  it('fires the per-tier "cupom acabando" messages via the remaining schedule', async () => {
+    const withRemaining = ladder({
+      tiers: [
+        {
+          coupon: 'CPDF10',
+          quota: 4,
+          label: '10%',
+          remaining_messages: [{ percent: 50, text: 'Metade do INSERIR CUPOM 👉 INSERIR LINK' }],
+        },
+        { coupon: 'CPDF9', quota: 4, label: '9%' },
+      ],
+    });
+    vi.mocked(laddersDb.findById).mockResolvedValue(withRemaining);
+    // 2 sales of 4 → 50% used → the "restam 50%" message (schedule index 0) is due.
+    vi.mocked(laddersDb.recordSale).mockResolvedValue({ ...withRemaining, total_sold: 2, tier_index: 0 });
+    vi.mocked(laddersDb.claimTierAdvance).mockResolvedValue(false);
+    vi.mocked(laddersDb.claimRemaining).mockResolvedValue(0); // we win from cursor 0
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    await onCouponSale('lad-1', 'CPDF10', {
+      now: NOW,
+      setCoupon: vi.fn(),
+      sendGroup,
+      feederTargets: async () => [{ releaseId: 'r', accountId: 'a', groupIds: ['g'] }],
+    });
+    expect(laddersDb.claimRemaining).toHaveBeenCalledWith('lad-1', 1);
+    expect(laddersDb.claimAnnounce).not.toHaveBeenCalled(); // schedule path, not legacy
+    expect(sendGroup).toHaveBeenCalledTimes(1);
+    expect(sendGroup.mock.calls[0][0]).toBe('Metade do CPDF10 👉 https://links.x.com/abc');
+  });
+
+  it('does not re-fire a remaining message already claimed (cursor unchanged)', async () => {
+    const withRemaining = ladder({
+      tiers: [
+        { coupon: 'CPDF10', quota: 4, remaining_messages: [{ percent: 50, text: 'x' }] },
+        { coupon: 'CPDF9', quota: 4 },
+      ],
+    });
+    vi.mocked(laddersDb.findById).mockResolvedValue(withRemaining);
+    vi.mocked(laddersDb.recordSale).mockResolvedValue({ ...withRemaining, total_sold: 2, tier_index: 0 });
+    vi.mocked(laddersDb.claimTierAdvance).mockResolvedValue(false);
+    vi.mocked(laddersDb.claimRemaining).mockResolvedValue(null); // already claimed elsewhere
+    const sendGroup = vi.fn();
+    await onCouponSale('lad-1', 'CPDF10', { now: NOW, sendGroup, feederTargets: async () => [] });
+    expect(sendGroup).not.toHaveBeenCalled();
   });
 });

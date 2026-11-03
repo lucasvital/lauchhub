@@ -241,11 +241,20 @@ export interface SendflowEventConfig {
   send_mode?: SendflowSendMode;
 }
 
+export interface TierRemainingMessage {
+  percent: number;
+  text: string;
+}
+
 export interface BfTier {
   coupon: string;
   quota: number;
   until?: string | null;
   label?: string;
+  /** Message posted when this tier becomes active (the "virada"). */
+  announce_text?: string;
+  /** Messages posted as this tier's quota depletes (50% / 25% / 10% remaining). */
+  remaining_messages?: TierRemainingMessage[];
 }
 
 export interface CouponLadder {

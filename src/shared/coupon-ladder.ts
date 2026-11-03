@@ -5,6 +5,14 @@
  * webhook count, Switchy link updates and the SendFlow group announce.
  */
 
+/** A message posted as a tier's quota depletes, keyed by % of quota remaining. */
+export interface TierRemainingMessage {
+  /** Percent of the tier's quota still available when this fires (e.g. 50, 25, 10). */
+  percent: number;
+  /** Text to post. Tokens: INSERIR LINK / {{link}}, INSERIR CUPOM / {{coupon}}, {{label}}. */
+  text: string;
+}
+
 export interface BfTier {
   /** Coupon code active in this tier, e.g. "CPDF10". */
   coupon: string;
@@ -14,6 +22,14 @@ export interface BfTier {
   until?: string | null;
   /** Optional label for the group message, e.g. "10%". */
   label?: string;
+  /**
+   * Message posted to the group when THIS tier becomes active (the "virada").
+   * The first/top tier has no transition. When empty a default is used.
+   * Tokens: INSERIR LINK / {{link}}, INSERIR CUPOM / {{coupon}}, {{label}}.
+   */
+  announce_text?: string;
+  /** Messages posted as this tier's quota depletes (50% / 25% / 10% remaining). */
+  remaining_messages?: TierRemainingMessage[];
 }
 
 export interface BfLadderConfig {
@@ -61,6 +77,71 @@ export function activeTierIndex(tiers: BfTier[], totalSold: number, nowIso: stri
   }
 
   return Math.min(Math.max(bySales, byDate), last);
+}
+
+/** One scheduled "cupom acabando" announce, with the sale count that triggers it. */
+export interface RemainingAnnounce {
+  tierIndex: number;
+  /** % of the tier's quota still available (50, 25, 10…). */
+  percent: number;
+  text: string;
+  /** Cumulative ladder sales at/after which this fires. */
+  triggerSold: number;
+}
+
+/**
+ * Build the ordered schedule of per-tier "cupom acabando" announces from the
+ * tiers' `remaining_messages`. Each message fires once, when cumulative ladder
+ * sales reach the point where that tier has `percent`% of its quota left.
+ * Sorted by the sale count that triggers it (ascending), so a monotonic cursor
+ * can claim exactly the ones newly due. Tiers without a quota are skipped
+ * (a percentage of "unlimited" is meaningless).
+ */
+export function remainingAnnounceSchedule(tiers: BfTier[]): RemainingAnnounce[] {
+  const events: RemainingAnnounce[] = [];
+  let cumBefore = 0;
+  for (let i = 0; i < tiers.length; i += 1) {
+    const q = tiers[i]!.quota > 0 ? tiers[i]!.quota : 0;
+    const msgs = tiers[i]!.remaining_messages ?? [];
+    if (q > 0) {
+      for (const m of [...msgs].sort((a, b) => b.percent - a.percent)) {
+        if (!m?.text?.trim()) continue;
+        const p = Math.max(0, Math.min(100, m.percent));
+        // "percent% remaining" ⇒ used = quota * (1 - percent/100). Needs ≥1 sale.
+        const usedAt = Math.max(1, Math.ceil(q * (1 - p / 100)));
+        events.push({ tierIndex: i, percent: p, text: m.text, triggerSold: cumBefore + usedAt });
+      }
+    }
+    cumBefore += q;
+  }
+  events.sort((a, b) => a.triggerSold - b.triggerSold || b.percent - a.percent);
+  return events;
+}
+
+/** The shareable link for a ladder's announces — the first Switchy short link. */
+export function ladderShareLink(links: { domain: string; slug: string }[] | undefined): string {
+  const l = (links ?? [])[0];
+  return l && l.domain && l.slug ? `https://${l.domain}/${l.slug}` : '';
+}
+
+/**
+ * Fill the ladder-message tokens in a configured announce text. Supports both
+ * the plain-language tokens (INSERIR LINK / INSERIR CUPOM) and {{...}} vars.
+ */
+export function renderLadderText(
+  text: string,
+  vars: { coupon: string; link: string; label?: string | null },
+): string {
+  const label = vars.label ?? '';
+  return (text ?? '')
+    .replaceAll('INSERIR LINK', vars.link)
+    .replaceAll('{{checkout_url}}', vars.link)
+    .replaceAll('{{link}}', vars.link)
+    .replaceAll('INSERIR CUPOM', vars.coupon)
+    .replaceAll('{{coupon}}', vars.coupon)
+    .replaceAll('{{cupom}}', vars.coupon)
+    .replaceAll('{{label}}', label)
+    .replaceAll('{{desconto}}', label);
 }
 
 /** Sales remaining in the given tier before its sales quota is hit. */
