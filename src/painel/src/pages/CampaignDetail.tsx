@@ -20,6 +20,7 @@ import {
   type SendflowEventConfig,
   type CouponLadder,
   type BfTier,
+  type TierRemainingMessage,
   type SendflowGroupOption,
   type SendflowListResponse,
   type SendflowReleaseOption,
@@ -2675,56 +2676,90 @@ function BlackFridayLadderEditor({
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
               Faixas (ordem: maior desconto primeiro)
             </span>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {tiers.map((t, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-2">
-                  <span className="w-5 text-right text-[11px] font-semibold text-muted-2">{i + 1}.</span>
-                  <input
-                    defaultValue={t.coupon}
-                    key={`c-${ladder.id}-${i}-${t.coupon}`}
-                    onBlur={(e) => e.target.value !== t.coupon && updateTier(i, 'coupon', e.target.value)}
-                    placeholder="CPDF10"
-                    className="!w-[110px] !py-1.5 !px-2.5 !text-[12px]"
+                <div key={i} className="rounded border border-border bg-surface p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="w-5 text-right text-[11px] font-semibold text-muted-2">{i + 1}.</span>
+                    <input
+                      defaultValue={t.coupon}
+                      key={`c-${ladder.id}-${i}-${t.coupon}`}
+                      onBlur={(e) => e.target.value !== t.coupon && updateTier(i, 'coupon', e.target.value)}
+                      placeholder="CPDF10"
+                      className="!w-[110px] !py-1.5 !px-2.5 !text-[12px]"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      defaultValue={t.quota}
+                      key={`q-${ladder.id}-${i}-${t.quota}`}
+                      onBlur={(e) => {
+                        const n = Math.max(0, Number(e.target.value) || 0);
+                        if (n !== t.quota) updateTier(i, 'quota', n);
+                      }}
+                      placeholder="qtd"
+                      className="!w-[80px] !py-1.5 !px-2.5 !text-[12px]"
+                      title="Quantas vendas essa faixa dura"
+                    />
+                    <input
+                      defaultValue={t.label ?? ''}
+                      key={`l-${ladder.id}-${i}-${t.label ?? ''}`}
+                      onBlur={(e) => e.target.value !== (t.label ?? '') && updateTier(i, 'label', e.target.value || null)}
+                      placeholder="10%"
+                      className="!w-[70px] !py-1.5 !px-2.5 !text-[12px]"
+                      title="Rótulo (ex: 10%) usado no aviso"
+                    />
+                    <input
+                      type="datetime-local"
+                      defaultValue={t.until ? t.until.slice(0, 16) : ''}
+                      key={`u-${ladder.id}-${i}-${t.until ?? ''}`}
+                      onBlur={(e) => {
+                        const v = e.target.value ? new Date(e.target.value).toISOString() : null;
+                        if (v !== (t.until ?? null)) updateTier(i, 'until', v);
+                      }}
+                      className="!w-[200px] !py-1.5 !px-2.5 !text-[12px]"
+                      title="(Opcional) regride nesta data mesmo sem bater a quota"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setTiers(tiers.filter((_, idx) => idx !== i))}
+                      className="ml-auto rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
+                    >
+                      x
+                    </button>
+                  </div>
+
+                  {i > 0 && (
+                    <label className="mt-2 block">
+                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+                        Mensagem da virada (quando {t.coupon || 'este cupom'} entra no ar)
+                      </span>
+                      <textarea
+                        rows={3}
+                        defaultValue={t.announce_text ?? ''}
+                        key={`at-${ladder.id}-${i}`}
+                        onBlur={(e) => {
+                          const v = e.target.value;
+                          if (v !== (t.announce_text ?? '')) updateTier(i, 'announce_text', v || null);
+                        }}
+                        placeholder={'Ex: 🚫 O cupom anterior acabou. Já liberei o ' + (t.coupon || 'CPDFx') + '!\n👉 Use no checkout: INSERIR LINK'}
+                        className="!text-[12px]"
+                        style={{ fontFamily: '"JetBrains Mono", monospace' }}
+                      />
+                    </label>
+                  )}
+
+                  <TierRemainingEditor
+                    coupon={t.coupon}
+                    messages={t.remaining_messages ?? []}
+                    onChange={(msgs) =>
+                      setTiers(
+                        tiers.map((tt, idx) =>
+                          idx === i ? { ...tt, remaining_messages: msgs } : tt,
+                        ),
+                      )
+                    }
                   />
-                  <input
-                    type="number"
-                    min={0}
-                    defaultValue={t.quota}
-                    key={`q-${ladder.id}-${i}-${t.quota}`}
-                    onBlur={(e) => {
-                      const n = Math.max(0, Number(e.target.value) || 0);
-                      if (n !== t.quota) updateTier(i, 'quota', n);
-                    }}
-                    placeholder="qtd"
-                    className="!w-[80px] !py-1.5 !px-2.5 !text-[12px]"
-                    title="Quantas vendas essa faixa dura"
-                  />
-                  <input
-                    defaultValue={t.label ?? ''}
-                    key={`l-${ladder.id}-${i}-${t.label ?? ''}`}
-                    onBlur={(e) => e.target.value !== (t.label ?? '') && updateTier(i, 'label', e.target.value || null)}
-                    placeholder="10%"
-                    className="!w-[70px] !py-1.5 !px-2.5 !text-[12px]"
-                    title="Rótulo (ex: 10%) usado no aviso"
-                  />
-                  <input
-                    type="datetime-local"
-                    defaultValue={t.until ? t.until.slice(0, 16) : ''}
-                    key={`u-${ladder.id}-${i}-${t.until ?? ''}`}
-                    onBlur={(e) => {
-                      const v = e.target.value ? new Date(e.target.value).toISOString() : null;
-                      if (v !== (t.until ?? null)) updateTier(i, 'until', v);
-                    }}
-                    className="!w-[200px] !py-1.5 !px-2.5 !text-[12px]"
-                    title="(Opcional) regride nesta data mesmo sem bater a quota"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setTiers(tiers.filter((_, idx) => idx !== i))}
-                    className="rounded-sm border border-accent-5/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
-                  >
-                    x
-                  </button>
                 </div>
               ))}
               <Button
@@ -2735,6 +2770,12 @@ function BlackFridayLadderEditor({
                 + faixa
               </Button>
             </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-muted-2">
+              Tokens nas mensagens: <code>INSERIR LINK</code> (vira o link do Switchy, com o cupom
+              trocado), <code>INSERIR CUPOM</code> (o cupom da faixa) e <code>{'{{label}}'}</code> (o
+              rótulo, ex: 10%). A <strong>virada</strong> dispara 1× quando a faixa entra no ar; as de{' '}
+              <strong>cupom acabando</strong> disparam 1× cada, quando sobra aquela % da quota.
+            </p>
           </div>
 
           <label className="block">
@@ -2771,6 +2812,79 @@ function BlackFridayLadderEditor({
         </div>
       )}
     </Card>
+  );
+}
+
+function TierRemainingEditor({
+  coupon,
+  messages,
+  onChange,
+}: {
+  coupon: string;
+  messages: TierRemainingMessage[];
+  onChange: (next: TierRemainingMessage[]) => void;
+}) {
+  const update = (i: number, patch: Partial<TierRemainingMessage>) =>
+    onChange(messages.map((m, idx) => (idx === i ? { ...m, ...patch } : m)));
+  const suggested = [50, 25, 10].find((p) => !messages.some((m) => m.percent === p)) ?? 25;
+  return (
+    <div className="mt-2">
+      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+        Cupom acabando ({coupon || 'esta faixa'}) — avisos por % restante
+      </span>
+      <div className="space-y-2">
+        {messages.length === 0 && (
+          <p className="text-[10px] text-muted-2">
+            Nenhum aviso. Adicione um e escolha a % restante (ex: 50, 25, 10) + o texto.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className="rounded border border-border bg-dim p-2">
+            <div className="mb-1.5 flex items-center gap-2">
+              <span className="text-[10px] text-muted-2">restam</span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                defaultValue={m.percent}
+                key={`rp-${i}-${m.percent}`}
+                onBlur={(e) => {
+                  const n = Math.max(1, Math.min(100, Number(e.target.value) || 0));
+                  if (n !== m.percent) update(i, { percent: n });
+                }}
+                className="!w-[64px] !py-1 !px-2 !text-[12px]"
+              />
+              <span className="text-[10px] text-muted-2">%</span>
+              <button
+                type="button"
+                onClick={() => onChange(messages.filter((_, idx) => idx !== i))}
+                className="ml-auto rounded-sm border border-accent-5/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-5 hover:bg-accent-5/15"
+              >
+                remover
+              </button>
+            </div>
+            <textarea
+              rows={3}
+              defaultValue={m.text}
+              key={`rt-${i}`}
+              onBlur={(e) => {
+                if (e.target.value !== m.text) update(i, { text: e.target.value });
+              }}
+              placeholder={'Ex: ⚠️ Metade do ' + (coupon || 'cupom') + ' já foi.\n🎟️ Use agora: INSERIR LINK'}
+              className="!text-[12px]"
+              style={{ fontFamily: '"JetBrains Mono", monospace' }}
+            />
+          </div>
+        ))}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onChange([...messages, { percent: suggested, text: '' }])}
+        >
+          + aviso de cupom acabando
+        </Button>
+      </div>
+    </div>
   );
 }
 

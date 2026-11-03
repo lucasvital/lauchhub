@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   activeTierIndex,
   remainingInTier,
+  remainingAnnounceSchedule,
+  ladderShareLink,
+  renderLadderText,
   extractKiwifyCoupon,
   swapCouponInUrl,
   setCouponInUrl,
@@ -14,6 +17,62 @@ const tiers: BfTier[] = [
   { coupon: 'CPDF8', quota: 100 },
 ];
 const NOW = '2026-11-25T12:00:00Z';
+
+describe('remainingAnnounceSchedule', () => {
+  it('turns per-tier % messages into sale-count triggers across the ladder', () => {
+    const t: BfTier[] = [
+      {
+        coupon: 'CPDF10',
+        quota: 100,
+        remaining_messages: [
+          { percent: 50, text: 'metade 10' },
+          { percent: 10, text: 'últimos 10' },
+        ],
+      },
+      { coupon: 'CPDF9', quota: 50, remaining_messages: [{ percent: 50, text: 'metade 9' }] },
+    ];
+    const sched = remainingAnnounceSchedule(t);
+    expect(sched).toEqual([
+      { tierIndex: 0, percent: 50, text: 'metade 10', triggerSold: 50 }, // used 50 of 100
+      { tierIndex: 0, percent: 10, text: 'últimos 10', triggerSold: 90 }, // used 90 of 100
+      { tierIndex: 1, percent: 50, text: 'metade 9', triggerSold: 125 }, // 100 + used 25 of 50
+    ]);
+  });
+
+  it('skips tiers without a quota and empty texts, orders by trigger', () => {
+    const t: BfTier[] = [
+      { coupon: 'A', quota: 0, remaining_messages: [{ percent: 50, text: 'nope' }] },
+      { coupon: 'B', quota: 10, remaining_messages: [{ percent: 25, text: '  ' }, { percent: 10, text: 'last B' }] },
+    ];
+    const sched = remainingAnnounceSchedule(t);
+    expect(sched).toEqual([{ tierIndex: 1, percent: 10, text: 'last B', triggerSold: 9 }]);
+  });
+
+  it('is empty when no tier carries remaining_messages', () => {
+    expect(remainingAnnounceSchedule(tiers)).toEqual([]);
+  });
+});
+
+describe('ladderShareLink', () => {
+  it('builds https URL from the first switchy link', () => {
+    expect(ladderShareLink([{ domain: 'links.x.com', slug: '123M4' }])).toBe('https://links.x.com/123M4');
+  });
+  it('is empty when there are no links', () => {
+    expect(ladderShareLink([])).toBe('');
+    expect(ladderShareLink(undefined)).toBe('');
+  });
+});
+
+describe('renderLadderText', () => {
+  it('substitutes the plain-language tokens and the {{vars}}', () => {
+    const out = renderLadderText('Use INSERIR CUPOM ({{label}}) agora 👉 INSERIR LINK', {
+      coupon: 'CPDF9',
+      link: 'https://links.x.com/123M4',
+      label: '9%',
+    });
+    expect(out).toBe('Use CPDF9 (9%) agora 👉 https://links.x.com/123M4');
+  });
+});
 
 describe('activeTierIndex — by sales quota', () => {
   it('stays on tier 0 until the quota is hit', () => {

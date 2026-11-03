@@ -18,6 +18,8 @@ export interface CouponLadderRow {
   total_sold: number;
   tier_index: number;
   last_announce: number;
+  /** Cursor into remainingAnnounceSchedule(tiers): how many have already fired. */
+  remaining_cursor: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -32,7 +34,7 @@ export interface CouponLadderInput {
 }
 
 const COLS = `id, name, enabled, announce_every, tiers, switchy_links, announce_targets,
-  total_sold, tier_index, last_announce, created_at, updated_at`;
+  total_sold, tier_index, last_announce, remaining_cursor, created_at, updated_at`;
 
 export async function list(): Promise<CouponLadderRow[]> {
   const r = await query<CouponLadderRow>(`SELECT ${COLS} FROM coupon_ladders ORDER BY created_at DESC`);
@@ -122,4 +124,23 @@ export async function claimAnnounce(id: string, milestone: number): Promise<bool
     [id, milestone],
   );
   return (r.rowCount ?? 0) > 0;
+}
+
+/**
+ * Advance the "cupom acabando" cursor to `dueCount` if it's currently lower,
+ * returning the PREVIOUS cursor value for the winning caller (so it can fire
+ * exactly the messages in [prev, dueCount)). Returns null when another caller
+ * already claimed up to or past `dueCount` (nothing to fire here).
+ */
+export async function claimRemaining(id: string, dueCount: number): Promise<number | null> {
+  const r = await query<{ prev: number }>(
+    `WITH prev AS (
+       SELECT remaining_cursor AS c FROM coupon_ladders WHERE id = $1 FOR UPDATE
+     )
+     UPDATE coupon_ladders SET remaining_cursor = $2, updated_at = now()
+     WHERE id = $1 AND remaining_cursor < $2
+     RETURNING (SELECT c FROM prev) AS prev`,
+    [id, dueCount],
+  );
+  return r.rows[0] ? Number(r.rows[0].prev) : null;
 }
