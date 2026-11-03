@@ -331,3 +331,84 @@ describe('processSendflowJob — group messages', () => {
     expect(result).toMatchObject({ posted: 1, failed: 0 });
   });
 });
+
+describe('processSendflowJob — multi-release targets', () => {
+  function multiJob(
+    targets: { releaseId: string; accountId: string | null; groupIds: string[] }[],
+    messages: SendflowTextMessage[] = [],
+  ): WebhookJob {
+    const job = makeJob({ messages });
+    // The multi-release list supersedes the single legacy fields.
+    job.config.sendflow_targets = targets;
+    job.config.sendflow_release_id = null;
+    job.config.sendflow_group_ids = [];
+    job.config.sendflow_account_id = null;
+    return job;
+  }
+
+  it('posts the message to EVERY target and removes the buyer from ALL of them', async () => {
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const result = await processSendflowJob(
+      multiJob(
+        [
+          { releaseId: 'relA', accountId: 'accA', groupIds: ['120363000000000001'] },
+          { releaseId: 'relB', accountId: 'accB', groupIds: ['120363000000000002', '120363000000000003'] },
+        ],
+        [{ text: 'Parabéns {{contact.first_name}}!' }],
+      ),
+      { sendGroup, remove, sleepMs: 0 },
+    );
+
+    expect(sendGroup).toHaveBeenCalledTimes(2);
+    expect(sendGroup).toHaveBeenCalledWith({
+      releaseId: 'relA',
+      accountId: 'accA',
+      groupIds: ['120363000000000001'],
+      messageText: 'Parabéns João!',
+    });
+    expect(sendGroup).toHaveBeenCalledWith({
+      releaseId: 'relB',
+      accountId: 'accB',
+      groupIds: ['120363000000000002', '120363000000000003'],
+      messageText: 'Parabéns João!',
+    });
+
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(remove.mock.calls.map((c) => c[0].releaseId)).toEqual(['relA', 'relB']);
+    expect(result).toMatchObject({ posted: 2, removed: 2, failed: 0 });
+  });
+
+  it('removes from a target without an account but only posts to the ones that have it', async () => {
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const result = await processSendflowJob(
+      multiJob(
+        [
+          { releaseId: 'relA', accountId: 'accA', groupIds: ['120363000000000001'] },
+          { releaseId: 'relB', accountId: null, groupIds: ['120363000000000002'] }, // remove-only
+        ],
+        [{ text: 'oi' }],
+      ),
+      { sendGroup, remove, sleepMs: 0 },
+    );
+    expect(sendGroup).toHaveBeenCalledTimes(1); // only relA posts
+    expect(sendGroup.mock.calls[0][0].releaseId).toBe('relA');
+    expect(remove).toHaveBeenCalledTimes(2); // both get removal
+    expect(result).toMatchObject({ posted: 1, removed: 2 });
+  });
+
+  it('a delayed "remove" job removes from every target', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const sendGroup = vi.fn();
+    const job = multiJob([
+      { releaseId: 'relA', accountId: 'accA', groupIds: ['120363000000000001'] },
+      { releaseId: 'relB', accountId: 'accB', groupIds: ['120363000000000002'] },
+    ]);
+    job.sendflow_action = 'remove';
+    const result = await processSendflowJob(job, { remove, sendGroup, sleepMs: 0 });
+    expect(sendGroup).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ removed: 2 });
+  });
+});

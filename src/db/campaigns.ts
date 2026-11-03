@@ -6,6 +6,7 @@ import type {
   MetaTemplateConfig,
   SendflowBroadcast,
   SendflowEventConfig,
+  SendflowTarget,
   WorkerId,
 } from '../types/job.js';
 
@@ -51,6 +52,12 @@ export interface CampaignRow {
   sendflow_group_ids: string[];
   /** SendFlow connected account that sends direct messages. */
   sendflow_account_id: string | null;
+  /**
+   * Multi-release targets: groups across several SendFlow releases, each with
+   * its own account. When non-empty this supersedes the single fields above
+   * (which stay for back-compat). Post + remove run for every target.
+   */
+  sendflow_targets: SendflowTarget[];
   /** Per-event direct WhatsApp text messages sent via SendFlow. */
   sendflow_messages: Partial<Record<EventId, SendflowEventConfig>>;
   /** Minutes to wait after the welcome message before removing the buyer. */
@@ -92,6 +99,7 @@ export interface CampaignCreateInput {
   sendflow_release_id?: string | null;
   sendflow_group_ids?: string[];
   sendflow_account_id?: string | null;
+  sendflow_targets?: SendflowTarget[];
   sendflow_messages?: Partial<Record<EventId, SendflowEventConfig>>;
   sendflow_remove_delay_minutes?: number;
   sendflow_broadcasts?: SendflowBroadcast[];
@@ -124,6 +132,7 @@ export interface CampaignUpdateInput {
   sendflow_release_id?: string | null;
   sendflow_group_ids?: string[];
   sendflow_account_id?: string | null;
+  sendflow_targets?: SendflowTarget[];
   sendflow_messages?: Partial<Record<EventId, SendflowEventConfig>>;
   sendflow_remove_delay_minutes?: number;
   sendflow_broadcasts?: SendflowBroadcast[];
@@ -139,7 +148,7 @@ const ALL_COLS = `
   mautic_instance_id, mautic_event_config,
   meta_templates,
   enabled_workers, match_by_product, checkout_links, utm_term_match, coupon, checkout_utm,
-  sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
+  sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_targets, sendflow_messages,
   sendflow_remove_delay_minutes, sendflow_broadcasts,
   tally_enabled, tally_mautic,
   coupon_ladder_id,
@@ -205,14 +214,16 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
         enabled_workers, match_by_product, checkout_links, coupon,
         sendflow_release_id, sendflow_group_ids, sendflow_account_id, sendflow_messages,
         sendflow_broadcasts, sheets_acquisition, sendflow_remove_delay_minutes,
-        utm_term_match, checkout_utm, active, tally_enabled, tally_mautic, coupon_ladder_id)
+        utm_term_match, checkout_utm, active, tally_enabled, tally_mautic, coupon_ladder_id,
+        sendflow_targets)
      VALUES ($1,$2,$3,$4,$5,
              $6,$7,
              $8,$9,$10::jsonb,
              $11,$12::jsonb,
              $13::jsonb,
              $14::jsonb,$15,$16::jsonb,$17,
-             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25,$26,$27,$28,$29::jsonb,$30)
+             $18,$19::jsonb,$20,$21::jsonb,$22::jsonb,$23,$24,$25,$26,$27,$28,$29::jsonb,$30,
+             $31::jsonb)
      RETURNING ${ALL_COLS}`,
     [
       input.name,
@@ -245,6 +256,7 @@ export async function create(input: CampaignCreateInput): Promise<CampaignRow> {
       input.tally_enabled ?? false,
       input.tally_mautic ? JSON.stringify(input.tally_mautic) : null,
       input.coupon_ladder_id ?? null,
+      JSON.stringify(input.sendflow_targets ?? []),
     ],
   );
   const row = r.rows[0];
@@ -283,6 +295,7 @@ export async function update(id: string, patch: CampaignUpdateInput): Promise<Ca
   if (patch.sendflow_release_id !== undefined) setField('sendflow_release_id', patch.sendflow_release_id);
   if (patch.sendflow_group_ids !== undefined) setField('sendflow_group_ids', patch.sendflow_group_ids, true);
   if (patch.sendflow_account_id !== undefined) setField('sendflow_account_id', patch.sendflow_account_id);
+  if (patch.sendflow_targets !== undefined) setField('sendflow_targets', patch.sendflow_targets, true);
   if (patch.sendflow_messages !== undefined) setField('sendflow_messages', patch.sendflow_messages, true);
   if (patch.sendflow_remove_delay_minutes !== undefined)
     setField('sendflow_remove_delay_minutes', patch.sendflow_remove_delay_minutes);

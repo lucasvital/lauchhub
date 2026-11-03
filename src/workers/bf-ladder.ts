@@ -4,6 +4,7 @@ import * as campaignsDb from '../db/campaigns.js';
 import { activeTierIndex, remainingInTier, setCouponInUrl } from '../shared/coupon-ladder.js';
 import { fetchLink, updateLink, type LinkRef } from '../integrations/switchy/client.js';
 import { sendGroupTextMessage } from '../integrations/sendflow/client.js';
+import { resolveSendflowTargets } from '../shared/sendflow-targets.js';
 import { logger } from '../shared/logger.js';
 
 const log = logger.child({ component: 'bf-ladder' });
@@ -46,9 +47,11 @@ async function defaultFeederTargets(ladderId: string): Promise<GroupTarget[]> {
   const out: GroupTarget[] = [];
   for (const c of campaigns) {
     if (c.coupon_ladder_id !== ladderId) continue;
-    const groupIds = (c.sendflow_group_ids ?? []).filter(Boolean);
-    if (c.sendflow_release_id && c.sendflow_account_id && groupIds.length > 0) {
-      out.push({ releaseId: c.sendflow_release_id, accountId: c.sendflow_account_id, groupIds });
+    // Honor multi-release targets: every target with an account can post.
+    for (const t of resolveSendflowTargets(c)) {
+      if (t.accountId && t.groupIds.length > 0) {
+        out.push({ releaseId: t.releaseId, accountId: t.accountId, groupIds: t.groupIds });
+      }
     }
   }
   return out;

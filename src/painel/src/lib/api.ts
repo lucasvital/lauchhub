@@ -99,6 +99,13 @@ export type EventId =
   | 'subscription_canceled'
   | 'subscription_renewed';
 
+/** One SendFlow destination: a release, its sending account, and its groups. */
+export interface SendflowTarget {
+  releaseId: string;
+  accountId: string | null;
+  groupIds: string[];
+}
+
 export interface MauticEventConfig {
   segments_add: number[];
   segments_remove: number[];
@@ -150,6 +157,7 @@ export interface Campaign {
   sendflow_release_id: string | null;
   sendflow_group_ids: string[];
   sendflow_account_id: string | null;
+  sendflow_targets: SendflowTarget[];
   sendflow_messages: Partial<Record<EventId, SendflowEventConfig>>;
   sendflow_remove_delay_minutes: number;
   sendflow_broadcasts: SendflowBroadcast[];
