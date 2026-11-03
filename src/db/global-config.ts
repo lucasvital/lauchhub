@@ -11,6 +11,7 @@ const SECRET_KEYS = new Set([
   'mautic_password',
   'google_service_account_json',
   'sendflow_api_key',
+  'switchy_api_key',
 ]);
 
 export function isSecret(key: string): boolean {
