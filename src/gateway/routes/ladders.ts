@@ -39,6 +39,21 @@ export async function registerLadderRoutes(app: FastifyInstance): Promise<void> 
     },
   );
 
+  // Manual correction of the state counters (e.g. undo a double-count from
+  // duplicate webhook deliveries). Not part of the normal flow.
+  app.patch<{
+    Params: { id: string };
+    Body: { total_sold?: number; tier_index?: number; last_announce?: number; remaining_cursor?: number };
+  }>(
+    '/api/ladders/:id/state',
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const l = await laddersDb.setCounters(req.params.id, req.body ?? {});
+      if (!l) return reply.code(404).send({ ok: false, error: 'not_found' });
+      return { ok: true, ladder: l };
+    },
+  );
+
   app.delete<{ Params: { id: string } }>(
     '/api/ladders/:id',
     { preHandler: app.requireAuth },

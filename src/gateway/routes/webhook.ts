@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import * as campaignsDb from '../../db/campaigns.js';
 import * as unmatchedDb from '../../db/unmatched.js';
 import * as webhookEventsDb from '../../db/webhook-events.js';
+import * as webhookDedupDb from '../../db/webhook-dedup.js';
 import { queues } from '../../queue/index.js';
 import { detectEvent, extractUtm, type KiwifyPayload } from '../event-detection.js';
 import { buildJobs } from '../enrich.js';
@@ -155,6 +156,39 @@ export async function registerWebhookRoute(app: FastifyInstance): Promise<void> 
             campaign_token: campaign.campaign_token,
           });
           return reply.code(200).send({ ok: true, processed: false, reason: 'unrecognized_event' });
+        }
+
+        // Idempotency: Kiwify can deliver the same sale more than once (the
+        // webhook URL registered twice, or a retry). Claim this delivery by
+        // (campaign, event, order_id, product_id) BEFORE any side effect, so a
+        // duplicate never double-counts the ladder, re-posts to the group, or
+        // duplicates the Sheets row. Only when we have an order_id to key on.
+        const orderId =
+          typeof payload.order_id === 'string' && payload.order_id.trim()
+            ? payload.order_id.trim()
+            : null;
+        if (orderId) {
+          const productId = String(
+            payload.Products?.[0]?.product_id ?? payload.Product?.product_id ?? '',
+          );
+          let firstDelivery = true;
+          try {
+            firstDelivery = await webhookDedupDb.claim(campaign.id, eventId, orderId, productId);
+          } catch (err) {
+            // Fail OPEN: if the dedup store is unavailable, process normally
+            // rather than dropping a real sale.
+            log.error({ event: 'webhook_dedup_error', err: String(err) });
+          }
+          if (!firstDelivery) {
+            log.info({ event: 'duplicate_delivery', order_id: orderId, event_id: eventId });
+            record({
+              outcome: 'duplicate',
+              event: eventId,
+              campaign_id: campaign.id,
+              campaign_token: campaign.campaign_token,
+            });
+            return reply.code(200).send({ ok: true, processed: false, reason: 'duplicate' });
+          }
         }
 
         const jobs = await buildJobs(payload, campaign, eventId);

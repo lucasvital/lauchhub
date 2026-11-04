@@ -9,6 +9,7 @@ export type WebhookOutcome =
   | 'no_contact'
   | 'skipped_other_offer'
   | 'skipped_other_funnel'
+  | 'duplicate'
   | 'error';
 
 export interface WebhookEventRow {
