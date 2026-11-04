@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import * as laddersDb from '../../db/coupon-ladders.js';
+import * as announceLogDb from '../../db/ladder-announce-log.js';
 
 /**
  * Black Friday coupon ladders CRUD. State counters (total_sold/tier_index/
@@ -36,6 +37,16 @@ export async function registerLadderRoutes(app: FastifyInstance): Promise<void> 
       const l = await laddersDb.update(req.params.id, req.body ?? {});
       if (!l) return reply.code(404).send({ ok: false, error: 'not_found' });
       return { ok: true, ladder: l };
+    },
+  );
+
+  // Per-group delivery log of the ladder's announces (newest first).
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
+    '/api/ladders/:id/announce-log',
+    { preHandler: app.requireAuth },
+    async (req) => {
+      const limit = Math.min(Number(req.query.limit ?? '100'), 500);
+      return { ok: true, items: await announceLogDb.list(req.params.id, limit) };
     },
   );
 
