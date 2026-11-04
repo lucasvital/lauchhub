@@ -138,13 +138,15 @@ export async function processSendflowJob(
     let removed = 0;
     let failed = 0;
     for (const t of targets) {
-      try {
-        await remove({ releaseId: t.releaseId, groupIds: t.groupIds, participants: [phone] });
-        removed += 1;
-        jobLog.info({ release_id: t.releaseId, group_ids: t.groupIds }, 'sendflow_removed_delayed');
-      } catch (err) {
-        failed += 1;
-        jobLog.warn({ err, release_id: t.releaseId }, 'sendflow_remove_delayed_failed');
+      for (const gid of t.groupIds) {
+        try {
+          await remove({ releaseId: t.releaseId, groupIds: [gid], participants: [phone] });
+          removed += 1;
+          jobLog.info({ release_id: t.releaseId, group_id: gid }, 'sendflow_removed_delayed');
+        } catch (err) {
+          failed += 1;
+          jobLog.warn({ err, release_id: t.releaseId, group_id: gid }, 'sendflow_remove_delayed_failed');
+        }
       }
     }
     return { posted: 0, removed, failed };
@@ -220,23 +222,29 @@ export async function processSendflowJob(
       if (messageText.trim()) rendered.push(messageText);
     }
 
+    // One post per GROUP (not one call per release with many groupIds): this
+    // guarantees every group gets it regardless of how SendFlow fans out a
+    // multi-group call, and lets each delivery retry on its own.
+    const postGroups = postTargets.flatMap((t) =>
+      t.groupIds.map((gid) => ({ releaseId: t.releaseId, accountId: t.accountId!, groupId: gid })),
+    );
     let sent = 0;
-    const totalSends = postTargets.length * rendered.length;
-    for (const t of postTargets) {
+    const totalSends = postGroups.length * rendered.length;
+    for (const g of postGroups) {
       for (const messageText of rendered) {
         const ok = await bestEffort(
           () =>
             sendGroup({
-              releaseId: t.releaseId,
-              accountId: t.accountId!,
-              groupIds: t.groupIds,
+              releaseId: g.releaseId,
+              accountId: g.accountId,
+              groupIds: [g.groupId],
               messageText,
             }),
           {
             tries: 3,
             sleepMs,
             onError: (err, attempt) =>
-              jobLog.warn({ err, release_id: t.releaseId, attempt }, 'sendflow_group_post_failed'),
+              jobLog.warn({ err, release_id: g.releaseId, group_id: g.groupId, attempt }, 'sendflow_group_post_failed'),
           },
         );
         if (ok) posted += 1;
@@ -245,31 +253,34 @@ export async function processSendflowJob(
         if (sent < totalSends) await sleep(sleepMs);
       }
     }
-    jobLog.info({ targets: postTargets.length, posted, failed }, 'sendflow_group_posted');
+    jobLog.info({ groups: postGroups.length, posted, failed }, 'sendflow_group_posted');
   }
 
   // 2) Remove the buyer from every target's group(s) — right after their
   //    message. The gap before the NEXT buyer's message is the spacing above,
   //    so the group sees "message → remove", wait, "message → remove".
   if (wantsRemove) {
-    for (let i = 0; i < targets.length; i += 1) {
-      const t = targets[i]!;
+    const removeGroups = targets.flatMap((t) =>
+      t.groupIds.map((gid) => ({ releaseId: t.releaseId, groupId: gid })),
+    );
+    for (let i = 0; i < removeGroups.length; i += 1) {
+      const g = removeGroups[i]!;
       const ok = await bestEffort(
-        () => remove({ releaseId: t.releaseId, groupIds: t.groupIds, participants: [phone] }),
+        () => remove({ releaseId: g.releaseId, groupIds: [g.groupId], participants: [phone] }),
         {
           tries: 3,
           sleepMs,
           onError: (err, attempt) =>
-            jobLog.warn({ err, release_id: t.releaseId, attempt }, 'sendflow_remove_failed'),
+            jobLog.warn({ err, release_id: g.releaseId, group_id: g.groupId, attempt }, 'sendflow_remove_failed'),
         },
       );
       if (ok) {
         removed += 1;
-        jobLog.info({ release_id: t.releaseId, group_ids: t.groupIds }, 'sendflow_removed');
+        jobLog.info({ release_id: g.releaseId, group_id: g.groupId }, 'sendflow_removed');
       } else {
         failed += 1;
       }
-      if (i < targets.length - 1) await sleep(sleepMs);
+      if (i < removeGroups.length - 1) await sleep(sleepMs);
     }
   }
 

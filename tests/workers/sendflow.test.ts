@@ -346,7 +346,7 @@ describe('processSendflowJob — multi-release targets', () => {
     return job;
   }
 
-  it('posts the message to EVERY target and removes the buyer from ALL of them', async () => {
+  it('posts ONE message per group (every group of every target) and removes from each', async () => {
     const sendGroup = vi.fn().mockResolvedValue(undefined);
     const remove = vi.fn().mockResolvedValue(undefined);
     const result = await processSendflowJob(
@@ -360,23 +360,23 @@ describe('processSendflowJob — multi-release targets', () => {
       { sendGroup, remove, sleepMs: 0 },
     );
 
-    expect(sendGroup).toHaveBeenCalledTimes(2);
-    expect(sendGroup).toHaveBeenCalledWith({
-      releaseId: 'relA',
-      accountId: 'accA',
-      groupIds: ['120363000000000001'],
-      messageText: 'Parabéns João!',
-    });
-    expect(sendGroup).toHaveBeenCalledWith({
-      releaseId: 'relB',
-      accountId: 'accB',
-      groupIds: ['120363000000000002', '120363000000000003'],
-      messageText: 'Parabéns João!',
-    });
+    // 3 groups total → 3 sends, each a single groupId
+    expect(sendGroup).toHaveBeenCalledTimes(3);
+    expect(sendGroup.mock.calls.map((c) => c[0].groupIds)).toEqual([
+      ['120363000000000001'],
+      ['120363000000000002'],
+      ['120363000000000003'],
+    ]);
+    expect(sendGroup.mock.calls.every((c) => c[0].messageText === 'Parabéns João!')).toBe(true);
 
-    expect(remove).toHaveBeenCalledTimes(2);
-    expect(remove.mock.calls.map((c) => c[0].releaseId)).toEqual(['relA', 'relB']);
-    expect(result).toMatchObject({ posted: 2, removed: 2, failed: 0 });
+    // removed from all 3 groups
+    expect(remove).toHaveBeenCalledTimes(3);
+    expect(remove.mock.calls.map((c) => c[0].groupIds)).toEqual([
+      ['120363000000000001'],
+      ['120363000000000002'],
+      ['120363000000000003'],
+    ]);
+    expect(result).toMatchObject({ posted: 3, removed: 3, failed: 0 });
   });
 
   it('removes from a target without an account but only posts to the ones that have it', async () => {
