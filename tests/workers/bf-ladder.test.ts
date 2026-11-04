@@ -9,6 +9,10 @@ vi.mock('../../src/db/coupon-ladders.js', () => ({
   claimRemaining: vi.fn(),
   list: vi.fn(),
 }));
+vi.mock('../../src/db/ladder-announce-log.js', () => ({
+  record: vi.fn().mockResolvedValue(undefined),
+  list: vi.fn(),
+}));
 
 import * as laddersDb from '../../src/db/coupon-ladders.js';
 import { onCouponSale } from '../../src/workers/bf-ladder.js';
@@ -79,6 +83,56 @@ describe('onCouponSale', () => {
     expect(sendGroup).toHaveBeenCalled();
     expect(sendGroup.mock.calls[0][0]).toContain('CPDF10');
     expect(sendGroup.mock.calls[0][0]).toContain('CPDF9');
+  });
+
+  it('announces to EACH group individually (one send per group) + logs each', async () => {
+    vi.mocked(laddersDb.findById).mockResolvedValue(ladder());
+    vi.mocked(laddersDb.recordSale).mockResolvedValue(ladder({ total_sold: 2, tier_index: 0 }));
+    vi.mocked(laddersDb.claimTierAdvance).mockResolvedValue(true);
+    vi.mocked(laddersDb.claimAnnounce).mockResolvedValue(false);
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    const logSend = vi.fn().mockResolvedValue(undefined);
+    await onCouponSale('lad-1', 'CPDF10', {
+      now: NOW,
+      setCoupon: vi.fn().mockResolvedValue(undefined),
+      sendGroup,
+      logSend,
+      sleepMs: 0,
+      // 2 releases × 2 groups = 4 groups
+      feederTargets: async () => [
+        { releaseId: 'rA', accountId: 'a', groupIds: ['g1', 'g2'] },
+        { releaseId: 'rB', accountId: 'b', groupIds: ['g3', 'g4'] },
+      ],
+    });
+    // one call PER group, each with a single groupId
+    expect(sendGroup).toHaveBeenCalledTimes(4);
+    const sentGroupIds = sendGroup.mock.calls.map((c) => c[1].groupIds);
+    expect(sentGroupIds).toEqual([['g1'], ['g2'], ['g3'], ['g4']]);
+    // each delivery logged ok
+    expect(logSend).toHaveBeenCalledTimes(4);
+    expect(logSend.mock.calls.every((c) => c[0].ok === true)).toBe(true);
+  });
+
+  it('a failed group does not block the others, and is logged as not ok', async () => {
+    vi.mocked(laddersDb.findById).mockResolvedValue(ladder());
+    vi.mocked(laddersDb.recordSale).mockResolvedValue(ladder({ total_sold: 2, tier_index: 0 }));
+    vi.mocked(laddersDb.claimTierAdvance).mockResolvedValue(true);
+    vi.mocked(laddersDb.claimAnnounce).mockResolvedValue(false);
+    const sendGroup = vi
+      .fn()
+      .mockResolvedValueOnce(undefined) // g1 ok
+      .mockRejectedValue(new Error('rate limit')); // g2 fails all retries
+    const logSend = vi.fn().mockResolvedValue(undefined);
+    await onCouponSale('lad-1', 'CPDF10', {
+      now: NOW,
+      setCoupon: vi.fn().mockResolvedValue(undefined),
+      sendGroup,
+      logSend,
+      sleepMs: 0,
+      feederTargets: async () => [{ releaseId: 'rA', accountId: 'a', groupIds: ['g1', 'g2'] }],
+    });
+    const byGroup = Object.fromEntries(logSend.mock.calls.map((c) => [c[0].group_id, c[0].ok]));
+    expect(byGroup).toEqual({ g1: true, g2: false });
   });
 
   it('does not double-fire the advance when the claim is lost (concurrent sale)', async () => {

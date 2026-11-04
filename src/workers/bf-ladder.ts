@@ -1,6 +1,7 @@
 import * as laddersDb from '../db/coupon-ladders.js';
 import type { CouponLadderRow } from '../db/coupon-ladders.js';
 import * as campaignsDb from '../db/campaigns.js';
+import * as announceLogDb from '../db/ladder-announce-log.js';
 import {
   activeTierIndex,
   ladderShareLink,
@@ -22,6 +23,15 @@ interface GroupTarget {
   groupIds: string[];
 }
 
+export interface AnnounceLogEntry {
+  ladder_id: string;
+  release_id: string;
+  group_id: string;
+  ok: boolean;
+  error?: string | null;
+  text?: string | null;
+}
+
 export interface LadderDeps {
   /** Force the `coupon` param on a Switchy link to `to` (read-then-write). */
   setCoupon?: (ref: LinkRef, to: string) => Promise<void>;
@@ -29,7 +39,15 @@ export interface LadderDeps {
   sendGroup?: (text: string, target: GroupTarget) => Promise<void>;
   /** The SendFlow group targets of the campaigns feeding this ladder. */
   feederTargets?: (ladderId: string) => Promise<GroupTarget[]>;
+  /** Record a per-group delivery result (best-effort). */
+  logSend?: (entry: AnnounceLogEntry) => Promise<void>;
+  /** Delay between per-group sends and inline retries (ms). */
+  sleepMs?: number;
   now?: string;
+}
+
+async function sleep(ms: number): Promise<void> {
+  if (ms > 0) await new Promise<void>((r) => setTimeout(r, ms));
 }
 
 async function defaultSetCoupon(ref: LinkRef, to: string): Promise<void> {
@@ -66,6 +84,8 @@ async function defaultFeederTargets(ladderId: string): Promise<GroupTarget[]> {
 
 async function announce(row: CouponLadderRow, text: string, deps: LadderDeps): Promise<void> {
   const sendGroup = deps.sendGroup ?? defaultSendGroup;
+  const logSend = deps.logSend ?? ((e: AnnounceLogEntry) => announceLogDb.record(e));
+  const sleepMs = deps.sleepMs ?? 500;
 
   // Prefer the ladder's own announce targets (multiple SendFlow releases +
   // their groups, configured in the Black Friday block). Fall back to the
@@ -82,12 +102,39 @@ async function announce(row: CouponLadderRow, text: string, deps: LadderDeps): P
       return;
     }
   }
+
+  // Send ONE message per group (not one call per release with many groupIds):
+  // guarantees each group gets it regardless of how SendFlow fans out a
+  // multi-group call, and lets each delivery be retried + logged on its own.
+  const groups: { releaseId: string; accountId: string; groupId: string }[] = [];
   for (const t of targets) {
-    try {
-      await sendGroup(text, t);
-    } catch (err) {
-      log.warn({ err, ladder: row.id }, 'ladder_announce_failed');
+    for (const gid of t.groupIds ?? []) {
+      if (gid) groups.push({ releaseId: t.releaseId, accountId: t.accountId, groupId: gid });
     }
+  }
+
+  for (let i = 0; i < groups.length; i += 1) {
+    const g = groups[i]!;
+    let ok = false;
+    let errMsg: string | null = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await sendGroup(text, { releaseId: g.releaseId, accountId: g.accountId, groupIds: [g.groupId] });
+        ok = true;
+        break;
+      } catch (err) {
+        errMsg = err instanceof Error ? err.message : String(err);
+        if (attempt < 3) await sleep(sleepMs);
+      }
+    }
+    if (ok) log.info({ ladder: row.id, release: g.releaseId, group: g.groupId }, 'ladder_announce_sent');
+    else log.warn({ ladder: row.id, release: g.releaseId, group: g.groupId, err: errMsg }, 'ladder_announce_failed');
+    try {
+      await logSend({ ladder_id: row.id, release_id: g.releaseId, group_id: g.groupId, ok, error: ok ? null : errMsg, text });
+    } catch (err) {
+      log.warn({ err, ladder: row.id }, 'ladder_announce_log_failed');
+    }
+    if (i < groups.length - 1) await sleep(sleepMs);
   }
 }
 
