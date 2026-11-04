@@ -11,13 +11,27 @@ export interface PendingJob {
   data: Partial<WebhookJob>;
 }
 
+/** The order key a job acts on — same order ⇒ same key ⇒ duplicate. */
+export function jobKey(data: Partial<WebhookJob>): string | null {
+  const oid = data?.order?.id;
+  if (!oid) return null;
+  return `${data?.campaign_id ?? ''}:${data?.event ?? ''}:${oid}:${data?.sendflow_action ?? 'process'}`;
+}
+
 /**
- * Plan a dedupe of pending (waiting/delayed) jobs: group by the order they act
- * on — (campaign_id, event, order.id, sendflow_action) — keep the EARLIEST job
- * of each group and mark the rest for removal. Jobs with no order id can't be
- * keyed safely, so they're left alone. Pure, so it's unit-tested without Redis.
+ * Plan a dedupe of pending (waiting/delayed) jobs, grouped by the order they
+ * act on — (campaign_id, event, order.id, sendflow_action):
+ *   - if that order has ALREADY posted (its key is in `postedKeys`, built from
+ *     completed jobs whose returnvalue.posted > 0), every pending job for it is
+ *     a duplicate → remove them all (its twin already went out);
+ *   - otherwise keep the EARLIEST pending job and remove the rest.
+ * Jobs with no order id can't be keyed safely, so they're left alone. Pure, so
+ * it's unit-tested without Redis.
  */
-export function planDedupe(jobs: PendingJob[]): {
+export function planDedupe(
+  jobs: PendingJob[],
+  postedKeys: Set<string> = new Set(),
+): {
   groups: number;
   toRemove: string[];
   skippedNoKey: number;
@@ -26,12 +40,11 @@ export function planDedupe(jobs: PendingJob[]): {
   const groups = new Map<string, PendingJob[]>();
   let skippedNoKey = 0;
   for (const j of jobs) {
-    const oid = j.data?.order?.id;
-    if (!oid) {
+    const key = jobKey(j.data);
+    if (!key) {
       skippedNoKey += 1;
       continue;
     }
-    const key = `${j.data?.campaign_id ?? ''}:${j.data?.event ?? ''}:${oid}:${j.data?.sendflow_action ?? 'process'}`;
     const arr = groups.get(key) ?? [];
     arr.push(j);
     groups.set(key, arr);
@@ -40,8 +53,15 @@ export function planDedupe(jobs: PendingJob[]): {
   const toRemove: string[] = [];
   const keptPerGroup: { key: string; kept: string | undefined; removed: string[] }[] = [];
   for (const [key, arr] of groups) {
+    arr.sort((a, b) => a.timestamp - b.timestamp); // earliest first
+    if (postedKeys.has(key)) {
+      // Already posted once → every pending job for this order is a duplicate.
+      const removed = arr.map((j) => j.id ?? '').filter(Boolean);
+      toRemove.push(...removed);
+      keptPerGroup.push({ key, kept: undefined, removed });
+      continue;
+    }
     if (arr.length <= 1) continue;
-    arr.sort((a, b) => a.timestamp - b.timestamp); // keep the earliest delivery
     const removed = arr.slice(1).map((j) => j.id ?? '').filter(Boolean);
     toRemove.push(...removed);
     keptPerGroup.push({ key, kept: arr[0]?.id, removed });
@@ -86,8 +106,22 @@ export async function registerQueueAdminRoutes(app: FastifyInstance): Promise<vo
       if (!WORKER_IDS.includes(worker)) return reply.code(400).send({ ok: false, error: 'invalid_worker' });
       const q = queues[worker];
       const jobs = await q.getJobs(['waiting', 'delayed', 'paused'], 0, 5000);
+
+      // Orders that already POSTED (returnvalue.posted > 0) — so a pending twin
+      // still waiting its spacing slot is a duplicate and must be removed.
+      const completed = await q.getJobs(['completed'], 0, 5000);
+      const postedKeys = new Set<string>();
+      for (const j of completed) {
+        const rv = j.returnvalue as { posted?: number } | null;
+        if ((rv?.posted ?? 0) > 0) {
+          const k = jobKey(j.data);
+          if (k) postedKeys.add(k);
+        }
+      }
+
       const plan = planDedupe(
         jobs.map((j) => ({ id: j.id, timestamp: j.timestamp, data: j.data })),
+        postedKeys,
       );
 
       let removed = 0;

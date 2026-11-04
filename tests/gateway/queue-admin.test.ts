@@ -49,4 +49,17 @@ describe('planDedupe', () => {
     ];
     expect(planDedupe(jobs).toRemove).toEqual([]);
   });
+
+  it('removes a lone pending job whose order already POSTED (spacing twin)', () => {
+    // Only one pending job left for o1, but its twin already posted → duplicate.
+    const jobs = [job('late', 5000)];
+    const postedKeys = new Set(['dgl1:compra_aprovada:o1:process']);
+    const plan = planDedupe(jobs, postedKeys);
+    expect(plan.toRemove).toEqual(['late']);
+  });
+
+  it('keeps a lone pending job whose order has NOT posted yet', () => {
+    const jobs = [job('solo', 5000)];
+    expect(planDedupe(jobs, new Set()).toRemove).toEqual([]);
+  });
 });
