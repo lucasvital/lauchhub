@@ -92,6 +92,37 @@ export async function remove(id: string): Promise<void> {
   await query('DELETE FROM coupon_ladders WHERE id = $1', [id]);
 }
 
+/**
+ * Manually correct the state counters (admin only — e.g. to undo a
+ * double-count from duplicate webhook deliveries). Only the fields passed are
+ * changed; counters normally move atomically in the engine, so this is for
+ * corrections, not routine flow.
+ */
+export async function setCounters(
+  id: string,
+  patch: { total_sold?: number; tier_index?: number; last_announce?: number; remaining_cursor?: number },
+): Promise<CouponLadderRow | null> {
+  const fields: string[] = [];
+  const params: unknown[] = [];
+  const set = (col: string, v: number): void => {
+    params.push(v);
+    fields.push(`${col} = $${params.length}`);
+  };
+  if (patch.total_sold !== undefined) set('total_sold', Math.max(0, Math.floor(patch.total_sold)));
+  if (patch.tier_index !== undefined) set('tier_index', Math.max(0, Math.floor(patch.tier_index)));
+  if (patch.last_announce !== undefined) set('last_announce', Math.max(0, Math.floor(patch.last_announce)));
+  if (patch.remaining_cursor !== undefined)
+    set('remaining_cursor', Math.max(0, Math.floor(patch.remaining_cursor)));
+  if (fields.length === 0) return findById(id);
+  fields.push('updated_at = now()');
+  params.push(id);
+  const r = await query<CouponLadderRow>(
+    `UPDATE coupon_ladders SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING ${COLS}`,
+    params,
+  );
+  return r.rows[0] ?? null;
+}
+
 /** Atomically +1 the sale counter and return the fresh row (null if gone). */
 export async function recordSale(id: string): Promise<CouponLadderRow | null> {
   const r = await query<CouponLadderRow>(

@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const findByTokenMock = vi.fn();
 const saveUnmatchedMock = vi.fn();
 const saveWebhookMock = vi.fn().mockResolvedValue(undefined);
+const dedupClaimMock = vi.fn().mockResolvedValue(true);
 const sheetsAdd = vi.fn();
 const chatwootAdd = vi.fn();
 const mauticAdd = vi.fn();
@@ -12,6 +13,7 @@ const metaAdd = vi.fn();
 vi.mock('../../src/db/campaigns.js', () => ({ findByToken: findByTokenMock }));
 vi.mock('../../src/db/unmatched.js', () => ({ save: saveUnmatchedMock }));
 vi.mock('../../src/db/webhook-events.js', () => ({ save: saveWebhookMock }));
+vi.mock('../../src/db/webhook-dedup.js', () => ({ claim: dedupClaimMock }));
 vi.mock('../../src/queue/index.js', () => ({
   queues: {
     sheets: { add: sheetsAdd },
@@ -79,6 +81,7 @@ const paidPayload = {
 beforeEach(() => {
   findByTokenMock.mockReset().mockResolvedValue(null);
   saveUnmatchedMock.mockReset().mockResolvedValue({ id: 'u1' });
+  dedupClaimMock.mockReset().mockResolvedValue(true);
   sheetsAdd.mockReset().mockResolvedValue({ id: 'j1' });
   chatwootAdd.mockReset().mockResolvedValue({ id: 'j2' });
   mauticAdd.mockReset().mockResolvedValue({ id: 'j3' });
@@ -106,6 +109,26 @@ describe('POST /webhook/:token', () => {
     expect(chatwootAdd).toHaveBeenCalledTimes(1);
     expect(mauticAdd).toHaveBeenCalledTimes(1);
     expect(metaAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('acks a DUPLICATE delivery without enqueueing (idempotency by order_id)', async () => {
+    findByTokenMock.mockResolvedValue(baseCampaign);
+    dedupClaimMock.mockResolvedValue(false); // second delivery of the same order
+    const app = await buildServer();
+
+    const res = await app.inject({ method: 'POST', url: '/webhook/cx-01', payload: paidPayload });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.processed).toBe(false);
+    expect(body.reason).toBe('duplicate');
+    expect(sheetsAdd).not.toHaveBeenCalled();
+    expect(chatwootAdd).not.toHaveBeenCalled();
+    expect(mauticAdd).not.toHaveBeenCalled();
+    expect(metaAdd).not.toHaveBeenCalled();
+    // the claim was keyed by campaign + event + order_id + product_id
+    expect(dedupClaimMock).toHaveBeenCalledWith('uuid-camp', 'compra_aprovada', 'ord-1', 'kw_prod_x');
   });
 
   it('processes a flat abandoned-cart webhook (no Customer/Products nesting)', async () => {
