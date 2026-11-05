@@ -201,6 +201,39 @@ describe('onCouponSale', () => {
     expect(sendGroup.mock.calls[0][0]).toBe('Metade do CPDF10 👉 https://links.x.com/abc');
   });
 
+  it('does NOT send a "cupom acabando" of a tier the ladder already left (date-advanced)', async () => {
+    // Tier 0 (MFB10) expired by date → active tier is 1 (MFB9). Total sales are
+    // still inside tier 0's sale band, so its 50% remaining event reads as due —
+    // but it must be SKIPPED (stale), only claimed so it never fires later.
+    const staleNow = '2026-11-05T12:00:00Z';
+    const l = ladder({
+      tiers: [
+        {
+          coupon: 'MFB10',
+          quota: 4,
+          until: '2026-11-01T00:00:00Z', // already expired at staleNow
+          remaining_messages: [{ percent: 50, text: 'metade MFB10 INSERIR LINK' }],
+        },
+        { coupon: 'MFB9', quota: 4 },
+      ],
+    });
+    vi.mocked(laddersDb.findById).mockResolvedValue(l);
+    vi.mocked(laddersDb.recordSale).mockResolvedValue({ ...l, total_sold: 2, tier_index: 1 });
+    vi.mocked(laddersDb.claimTierAdvance).mockResolvedValue(false);
+    vi.mocked(laddersDb.claimRemaining).mockResolvedValue(0); // cursor 0 → would fire all due
+    const sendGroup = vi.fn().mockResolvedValue(undefined);
+    await onCouponSale('lad-1', 'MFB10', {
+      now: staleNow,
+      sendGroup,
+      logSend: vi.fn(),
+      sleepMs: 0,
+      feederTargets: async () => [{ releaseId: 'r', accountId: 'a', groupIds: ['g'] }],
+    });
+    // the stale MFB10 remaining was claimed (so it won't fire later) but NOT posted
+    expect(laddersDb.claimRemaining).toHaveBeenCalledWith('lad-1', 1);
+    expect(sendGroup).not.toHaveBeenCalled();
+  });
+
   it('does not re-fire a remaining message already claimed (cursor unchanged)', async () => {
     const withRemaining = ladder({
       tiers: [
