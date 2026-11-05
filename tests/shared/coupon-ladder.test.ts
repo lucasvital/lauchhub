@@ -8,6 +8,7 @@ import {
   extractKiwifyCoupon,
   swapCouponInUrl,
   setCouponInUrl,
+  upsertCouponInUrl,
   type BfTier,
 } from '../../src/shared/coupon-ladder.js';
 
@@ -156,5 +157,28 @@ describe('setCouponInUrl', () => {
     expect(setCouponInUrl('https://lps.x.com/bf/?cupom=CPDF10&utm_medium=grupo', 'CPDF9')).toBe(
       'https://lps.x.com/bf/?cupom=CPDF9&utm_medium=grupo',
     );
+  });
+});
+
+describe('upsertCouponInUrl', () => {
+  it('appends the coupon param when the URL has none (default coupon=)', () => {
+    expect(upsertCouponInUrl('https://pay.kiwify.com.br/ABC?utm_source=wa', 'MFB10')).toBe(
+      'https://pay.kiwify.com.br/ABC?utm_source=wa&coupon=MFB10',
+    );
+  });
+  it('appends with ? when there is no query string', () => {
+    expect(upsertCouponInUrl('https://lp.x.com/bf', 'MFB10', 'cupom')).toBe('https://lp.x.com/bf?cupom=MFB10');
+  });
+  it('appends the chosen param name for landing pages (cupom)', () => {
+    expect(upsertCouponInUrl('https://lp.x.com/bf?utm_medium=grupo', 'MFB10', 'cupom')).toBe(
+      'https://lp.x.com/bf?utm_medium=grupo&cupom=MFB10',
+    );
+  });
+  it('replaces an existing coupon/cupom instead of appending', () => {
+    expect(upsertCouponInUrl('https://x.com/a?coupon=OLD&b=1', 'MFB10')).toBe('https://x.com/a?coupon=MFB10&b=1');
+    expect(upsertCouponInUrl('https://x.com/a?cupom=OLD', 'MFB10', 'coupon')).toBe('https://x.com/a?cupom=MFB10');
+  });
+  it('keeps a #fragment at the end', () => {
+    expect(upsertCouponInUrl('https://x.com/a?b=1#frag', 'MFB10')).toBe('https://x.com/a?b=1&coupon=MFB10#frag');
   });
 });
