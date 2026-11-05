@@ -194,3 +194,22 @@ export function swapCouponInUrl(url: string, from: string, to: string): string {
 export function setCouponInUrl(url: string, to: string): string {
   return url.replace(new RegExp(`([?&]${COUPON_PARAM}=)[^&#]*`, 'gi'), `$1${to}`);
 }
+
+/**
+ * Ensure the URL carries a coupon param set to `to`: replace an existing
+ * `coupon=`/`cupom=`, or APPEND one (`param`, default "coupon") when none is
+ * present. Used to seed a ladder's links with the starting coupon, since
+ * setCouponInUrl only replaces an existing param. Keeps any #fragment last.
+ */
+export function upsertCouponInUrl(
+  url: string,
+  to: string,
+  param: 'coupon' | 'cupom' = 'coupon',
+): string {
+  if (new RegExp(`[?&]${COUPON_PARAM}=`, 'i').test(url)) return setCouponInUrl(url, to);
+  const hashAt = url.indexOf('#');
+  const base = hashAt >= 0 ? url.slice(0, hashAt) : url;
+  const frag = hashAt >= 0 ? url.slice(hashAt) : '';
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}${param}=${to}${frag}`;
+}
