@@ -20,6 +20,10 @@ export interface CouponLadderRow {
   last_announce: number;
   /** Cursor into remainingAnnounceSchedule(tiers): how many have already fired. */
   remaining_cursor: number;
+  /** Per-coupon use counts: { "CPDF10": 86, "CPDF9": 4 }. */
+  coupon_counts: Record<string, number>;
+  /** Per-tier count of "cupom acabando" messages already fired: { "0": 3 }. */
+  remaining_fired: Record<string, number>;
   created_at: Date;
   updated_at: Date;
 }
@@ -34,7 +38,8 @@ export interface CouponLadderInput {
 }
 
 const COLS = `id, name, enabled, announce_every, tiers, switchy_links, announce_targets,
-  total_sold, tier_index, last_announce, remaining_cursor, created_at, updated_at`;
+  total_sold, tier_index, last_announce, remaining_cursor, coupon_counts, remaining_fired,
+  created_at, updated_at`;
 
 export async function list(): Promise<CouponLadderRow[]> {
   const r = await query<CouponLadderRow>(`SELECT ${COLS} FROM coupon_ladders ORDER BY created_at DESC`);
@@ -100,7 +105,14 @@ export async function remove(id: string): Promise<void> {
  */
 export async function setCounters(
   id: string,
-  patch: { total_sold?: number; tier_index?: number; last_announce?: number; remaining_cursor?: number },
+  patch: {
+    total_sold?: number;
+    tier_index?: number;
+    last_announce?: number;
+    remaining_cursor?: number;
+    coupon_counts?: Record<string, number>;
+    remaining_fired?: Record<string, number>;
+  },
 ): Promise<CouponLadderRow | null> {
   const fields: string[] = [];
   const params: unknown[] = [];
@@ -108,11 +120,17 @@ export async function setCounters(
     params.push(v);
     fields.push(`${col} = $${params.length}`);
   };
+  const setJsonb = (col: string, v: unknown): void => {
+    params.push(JSON.stringify(v));
+    fields.push(`${col} = $${params.length}::jsonb`);
+  };
   if (patch.total_sold !== undefined) set('total_sold', Math.max(0, Math.floor(patch.total_sold)));
   if (patch.tier_index !== undefined) set('tier_index', Math.max(0, Math.floor(patch.tier_index)));
   if (patch.last_announce !== undefined) set('last_announce', Math.max(0, Math.floor(patch.last_announce)));
   if (patch.remaining_cursor !== undefined)
     set('remaining_cursor', Math.max(0, Math.floor(patch.remaining_cursor)));
+  if (patch.coupon_counts !== undefined) setJsonb('coupon_counts', patch.coupon_counts);
+  if (patch.remaining_fired !== undefined) setJsonb('remaining_fired', patch.remaining_fired);
   if (fields.length === 0) return findById(id);
   fields.push('updated_at = now()');
   params.push(id);
@@ -131,6 +149,52 @@ export async function recordSale(id: string): Promise<CouponLadderRow | null> {
     [id],
   );
   return r.rows[0] ?? null;
+}
+
+/**
+ * Atomically record a sale for a specific coupon: +1 on that coupon's
+ * per-coupon count AND on the display total. Returns the fresh row.
+ */
+export async function recordCouponSale(id: string, coupon: string): Promise<CouponLadderRow | null> {
+  const r = await query<CouponLadderRow>(
+    `UPDATE coupon_ladders
+       SET coupon_counts = jsonb_set(
+             coupon_counts, ARRAY[$2],
+             to_jsonb(COALESCE((coupon_counts->>$2)::int, 0) + 1)
+           ),
+           total_sold = total_sold + 1,
+           updated_at = now()
+     WHERE id = $1
+     RETURNING ${COLS}`,
+    [id, coupon],
+  );
+  return r.rows[0] ?? null;
+}
+
+/**
+ * Advance a tier's "cupom acabando" fired-count to `due` if currently lower,
+ * returning the PREVIOUS value for the winning caller (fire messages in
+ * [prev, due)). Returns null when already at/above `due` (nothing to fire).
+ * Per-tier, so each tier's % messages fire exactly once by ITS coupon's count.
+ */
+export async function claimTierRemaining(
+  id: string,
+  tierIndex: number,
+  due: number,
+): Promise<number | null> {
+  const key = String(tierIndex);
+  const r = await query<{ prev: number }>(
+    `WITH prev AS (
+       SELECT COALESCE((remaining_fired->>$2)::int, 0) AS c FROM coupon_ladders WHERE id = $1 FOR UPDATE
+     )
+     UPDATE coupon_ladders
+       SET remaining_fired = jsonb_set(remaining_fired, ARRAY[$2], to_jsonb($3::int)),
+           updated_at = now()
+     WHERE id = $1 AND COALESCE((remaining_fired->>$2)::int, 0) < $3
+     RETURNING (SELECT c FROM prev) AS prev`,
+    [id, key, due],
+  );
+  return r.rows[0] ? Number(r.rows[0].prev) : null;
 }
 
 /**

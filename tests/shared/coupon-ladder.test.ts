@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   activeTierIndex,
+  activeTierIndexByCoupon,
+  tierRemainingDue,
   remainingInTier,
   remainingAnnounceSchedule,
   ladderShareLink,
@@ -18,6 +20,54 @@ const tiers: BfTier[] = [
   { coupon: 'CPDF8', quota: 100 },
 ];
 const NOW = '2026-11-25T12:00:00Z';
+
+describe('activeTierIndexByCoupon', () => {
+  const t: BfTier[] = [
+    { coupon: 'MFB10', quota: 60 },
+    { coupon: 'MFB9', quota: 8 },
+    { coupon: 'MFB8', quota: 8 },
+  ];
+  it('advances only when a coupon reaches ITS OWN quota', () => {
+    expect(activeTierIndexByCoupon(t, { MFB10: 59 }, NOW)).toBe(0);
+    expect(activeTierIndexByCoupon(t, { MFB10: 60 }, NOW)).toBe(1); // MFB10 full
+    expect(activeTierIndexByCoupon(t, { MFB10: 60, MFB9: 8 }, NOW)).toBe(2); // + MFB9 full
+  });
+  it('does NOT advance from the next coupon\'s sales (no cross-coupon mix)', () => {
+    // MFB10 only 40 of 60, but 20 MFB9 sales — stays on MFB10 by sales
+    expect(activeTierIndexByCoupon(t, { MFB10: 40, MFB9: 20 }, NOW)).toBe(0);
+  });
+  it('date can still push the tier forward even if the coupon is not full', () => {
+    const dated: BfTier[] = [
+      { coupon: 'MFB10', quota: 60, until: '2026-11-07T02:59:00Z' },
+      { coupon: 'MFB9', quota: 8 },
+    ];
+    expect(activeTierIndexByCoupon(dated, { MFB10: 40 }, '2026-11-08T00:00:00Z')).toBe(1);
+  });
+  it('clamps to the last tier', () => {
+    expect(activeTierIndexByCoupon(t, { MFB10: 99, MFB9: 99, MFB8: 99 }, NOW)).toBe(2);
+  });
+});
+
+describe('tierRemainingDue', () => {
+  const tier: BfTier = {
+    coupon: 'MFB10',
+    quota: 8,
+    remaining_messages: [
+      { percent: 50, text: 'metade' }, // threshold ceil(8*0.5)=4
+      { percent: 25, text: '25' }, // ceil(8*0.75)=6
+      { percent: 10, text: '10' }, // ceil(8*0.9)=8
+    ],
+  };
+  it('counts due messages from the coupon count (thresholds 4/6/8)', () => {
+    expect(tierRemainingDue(tier, 3)).toBe(0);
+    expect(tierRemainingDue(tier, 4)).toBe(1); // 50%
+    expect(tierRemainingDue(tier, 6)).toBe(2); // + 25%
+    expect(tierRemainingDue(tier, 8)).toBe(3); // + 10%
+  });
+  it('is 0 for a tier without a quota', () => {
+    expect(tierRemainingDue({ coupon: 'X', quota: 0, remaining_messages: [{ percent: 50, text: 'a' }] }, 10)).toBe(0);
+  });
+});
 
 describe('remainingAnnounceSchedule', () => {
   it('turns per-tier % messages into sale-count triggers across the ladder', () => {

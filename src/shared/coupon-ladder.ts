@@ -144,6 +144,73 @@ export function renderLadderText(
     .replaceAll('{{desconto}}', label);
 }
 
+/** A coupon's use count from the per-coupon counts map (missing → 0). */
+export function couponCount(counts: Record<string, number> | undefined, coupon: string): number {
+  const n = counts?.[coupon];
+  return typeof n === 'number' && n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Active tier using PER-COUPON counts: a tier is "full" by sales when its OWN
+ * coupon's uses reach its quota (not the cumulative total). Advance past full
+ * tiers (by sales) and expired tiers (by date); active = the furthest reached,
+ * clamped to the last tier. Monotonic, like activeTierIndex.
+ */
+export function activeTierIndexByCoupon(
+  tiers: BfTier[],
+  counts: Record<string, number> | undefined,
+  nowIso: string,
+): number {
+  if (tiers.length === 0) return 0;
+  const last = tiers.length - 1;
+
+  let bySales = 0;
+  for (let i = 0; i < tiers.length; i += 1) {
+    const quota = tiers[i]!.quota > 0 ? tiers[i]!.quota : Infinity;
+    if (couponCount(counts, tiers[i]!.coupon) >= quota) {
+      bySales = i + 1; // this coupon is used up — at least the next tier
+    } else {
+      bySales = i;
+      break;
+    }
+  }
+
+  const now = Date.parse(nowIso);
+  let byDate = 0;
+  for (let i = 0; i < tiers.length; i += 1) {
+    const until = tiers[i]!.until ? Date.parse(tiers[i]!.until as string) : NaN;
+    if (!Number.isNaN(until) && now >= until) byDate = i + 1;
+    else break;
+  }
+
+  return Math.min(Math.max(bySales, byDate), last);
+}
+
+/** A tier's "cupom acabando" messages, ordered by firing order (50% → 25% → 10%). */
+export function sortedRemainingMessages(tier: BfTier): TierRemainingMessage[] {
+  return (tier.remaining_messages ?? [])
+    .filter((m) => m?.text?.trim())
+    .sort((a, b) => b.percent - a.percent);
+}
+
+/**
+ * How many of a tier's "cupom acabando" messages are due given how many times
+ * ITS coupon was used. Message for `percent` fires when uses reach
+ * quota*(1 - percent/100). Returns the count due (fire indices [fired, due)).
+ */
+export function tierRemainingDue(tier: BfTier, count: number): number {
+  const q = tier.quota > 0 ? tier.quota : 0;
+  if (q <= 0) return 0;
+  let due = 0;
+  for (const m of sortedRemainingMessages(tier)) {
+    const p = Math.max(0, Math.min(100, m.percent));
+    const threshold = Math.max(1, Math.ceil(q * (1 - p / 100)));
+    if (count >= threshold) due += 1;
+    else break;
+  }
+  return due;
+}
+
 /** Sales remaining in the given tier before its sales quota is hit. */
 export function remainingInTier(tiers: BfTier[], index: number, totalSold: number): number {
   const tier = tiers[index];
