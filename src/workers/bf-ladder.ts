@@ -220,6 +220,13 @@ export async function onCouponSale(
         const link = ladderShareLink(row.switchy_links);
         for (let i = prev; i < due; i += 1) {
           const ev = schedule[i]!;
+          // Only announce a "cupom acabando" while ITS tier is the active one.
+          // When the ladder advanced past a tier (by date or quota), its
+          // sale-count-based remaining events may still read as "due" (total
+          // sales are counted globally) — those are stale and must be skipped,
+          // not posted. The cursor is still claimed up to `due`, so they never
+          // fire later either.
+          if (ev.tierIndex !== active) continue;
           const tier = row.tiers[ev.tierIndex];
           const text = renderLadderText(ev.text, {
             coupon: tier?.coupon ?? '',
