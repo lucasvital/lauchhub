@@ -268,6 +268,10 @@ export interface CouponLadder {
   total_sold: number;
   tier_index: number;
   last_announce: number;
+  /** Per-coupon use counts: { "CPDF10": 86, "CPDF9": 4 }. */
+  coupon_counts?: Record<string, number>;
+  /** Per-tier count of "cupom acabando" messages already fired. */
+  remaining_fired?: Record<string, number>;
 }
 
 export type SendflowBroadcastKind = 'template' | 'names';

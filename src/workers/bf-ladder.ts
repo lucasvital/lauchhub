@@ -3,12 +3,14 @@ import type { CouponLadderRow } from '../db/coupon-ladders.js';
 import * as campaignsDb from '../db/campaigns.js';
 import * as announceLogDb from '../db/ladder-announce-log.js';
 import {
-  activeTierIndex,
+  activeTierIndexByCoupon,
+  couponCount,
   ladderShareLink,
-  remainingAnnounceSchedule,
   remainingInTier,
   renderLadderText,
   setCouponInUrl,
+  sortedRemainingMessages,
+  tierRemainingDue,
 } from '../shared/coupon-ladder.js';
 import { fetchLink, updateLink, type LinkRef } from '../integrations/switchy/client.js';
 import { sendGroupTextMessage } from '../integrations/sendflow/client.js';
@@ -197,47 +199,42 @@ export async function onCouponSale(
   const cfg = await laddersDb.findById(ladderId);
   if (!cfg || !cfg.enabled) return;
   const want = couponUsed.trim().toLowerCase();
-  if (!want || !cfg.tiers.some((t) => (t.coupon ?? '').toLowerCase() === want)) return;
+  const matched = cfg.tiers.find((t) => (t.coupon ?? '').toLowerCase() === want);
+  if (!matched) return;
+  const coupon = matched.coupon; // canonical casing — the per-coupon count key
 
-  const row = await laddersDb.recordSale(ladderId);
+  // Per-coupon count: only this coupon's uses advance ITS tier / fire ITS %.
+  const row = await laddersDb.recordCouponSale(ladderId, coupon);
   if (!row || !row.enabled) return;
   const now = deps.now ?? new Date().toISOString();
 
-  const active = activeTierIndex(row.tiers, row.total_sold, now);
+  const active = activeTierIndexByCoupon(row.tiers, row.coupon_counts, now);
   if (active > row.tier_index && (await laddersDb.claimTierAdvance(ladderId, active))) {
     await onAdvance(row, active, deps);
   }
 
-  // "Cupom acabando" announces. When any tier carries configured
-  // remaining_messages, use the per-tier 50/25/10% schedule; otherwise fall
-  // back to the legacy "every N sales" milestone.
-  const schedule = remainingAnnounceSchedule(row.tiers);
-  if (schedule.length > 0) {
-    const due = schedule.filter((e) => e.triggerSold <= row.total_sold).length;
+  // "Cupom acabando": only for the ACTIVE tier, based on how many times ITS OWN
+  // coupon was used (never the global total — so one coupon's sales can't cross
+  // another coupon's % thresholds). Each fires once, tracked per tier.
+  const activeTier = row.tiers[active];
+  if (activeTier && sortedRemainingMessages(activeTier).length > 0) {
+    const count = couponCount(row.coupon_counts, activeTier.coupon);
+    const due = tierRemainingDue(activeTier, count);
     if (due > 0) {
-      const prev = await laddersDb.claimRemaining(ladderId, due);
+      const prev = await laddersDb.claimTierRemaining(ladderId, active, due);
       if (prev !== null) {
         const link = ladderShareLink(row.switchy_links);
+        const msgs = sortedRemainingMessages(activeTier);
         for (let i = prev; i < due; i += 1) {
-          const ev = schedule[i]!;
-          // Only announce a "cupom acabando" while ITS tier is the active one.
-          // When the ladder advanced past a tier (by date or quota), its
-          // sale-count-based remaining events may still read as "due" (total
-          // sales are counted globally) — those are stale and must be skipped,
-          // not posted. The cursor is still claimed up to `due`, so they never
-          // fire later either.
-          if (ev.tierIndex !== active) continue;
-          const tier = row.tiers[ev.tierIndex];
-          const text = renderLadderText(ev.text, {
-            coupon: tier?.coupon ?? '',
-            link,
-            label: tier?.label,
-          });
+          const m = msgs[i];
+          if (!m) continue;
+          const text = renderLadderText(m.text, { coupon: activeTier.coupon, link, label: activeTier.label });
           await announce(row, text, deps);
         }
       }
     }
   } else if (row.announce_every > 0) {
+    // Legacy "every N sales" (ladders without per-tier remaining_messages).
     const milestone = Math.floor(row.total_sold / row.announce_every) * row.announce_every;
     if (milestone > row.last_announce && milestone > 0 && (await laddersDb.claimAnnounce(ladderId, milestone))) {
       await announceRemaining(row, active, deps);
@@ -261,7 +258,7 @@ export async function advanceLaddersByDate(deps: LadderDeps = {}): Promise<void>
   }
   for (const row of ladders) {
     if (!row.enabled) continue;
-    const active = activeTierIndex(row.tiers, row.total_sold, now);
+    const active = activeTierIndexByCoupon(row.tiers, row.coupon_counts, now);
     if (active > row.tier_index && (await laddersDb.claimTierAdvance(row.id, active))) {
       await onAdvance(row, active, deps);
     }
